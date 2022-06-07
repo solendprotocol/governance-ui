@@ -405,9 +405,9 @@ export class VoterWeight implements VoterWeightInterface {
 
   getTokenRecordToCreateProposal(config: GovernanceConfig) {
     // Prefer community token owner record as proposal owner
-    if (this.hasMinCommunityWeight(config.minCommunityTokensToCreateProposal)) {
-      return this.communityTokenRecord!
-    }
+    // if (this.hasMinCommunityWeight(config.minCommunityTokensToCreateProposal)) {
+    return this.communityTokenRecord!
+    // }
     if (this.hasMinCouncilWeight(config.minCouncilTokensToCreateProposal)) {
       return this.councilTokenRecord!
     }

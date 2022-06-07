@@ -19,6 +19,7 @@ export interface TreasuryStrategy {
   handledMint: string
   handledTokenSymbol: string
   handledTokenImgSrc: string
+  reserveAddress?: string
   protocolLogoSrc: string
   strategyName: string
   strategyDescription: string
@@ -32,9 +33,9 @@ export interface TreasuryStrategy {
 
 export type HandleCreateProposalWithStrategy = (
   { connection, wallet, programId, programVersion, walletPubkey }: RpcContext,
-  handledMint: string,
   form: MNGODepositForm,
   realm: ProgramAccount<Realm>,
+  handledMint: string,
   treasuaryAccount: AssetAccount,
   tokenOwnerRecord: ProgramAccount<TokenOwnerRecord>,
   governingTokenMint: PublicKey,

@@ -61,7 +61,7 @@ const AccountOverview = () => {
     (s) => s.isLoadingRecentActivity
   )
   const market = useMarketStore((s) => s)
-  const [currentMangoDeposits, setCurrentMangoDeposits] = useState(0)
+  const [currentDeposits, setCurrentMangoDeposits] = useState(0)
   const [mngoAccounts, setMngoAccounts] = useState<MangoAccount[]>([])
   const [openNftDepositModal, setOpenNftDepositModal] = useState(false)
   const [openCommonSendModal, setOpenCommonSendModal] = useState(false)
@@ -97,6 +97,7 @@ const AccountOverview = () => {
     }
   }, [currentAccount, strategies])
   useEffect(() => {
+    // Mango
     const handleGetMangoAccounts = async () => {
       const currentAccountMint = currentAccount?.extensions.token?.account.mint
       const currentPositions = calculateAllDepositsInMangoAccountsForMint(
@@ -304,7 +305,7 @@ const AccountOverview = () => {
               eligibleInvestments.map((strat, i) => (
                 <StrategyCard
                   key={strat.handledTokenSymbol + i}
-                  currentMangoDeposits={currentMangoDeposits}
+                  currentDeposits={currentDeposits}
                   onClick={() => setProposedInvestment(strat)}
                   strat={strat}
                 />
@@ -321,7 +322,7 @@ const AccountOverview = () => {
               <StrategyCard
                 key={strat.handledTokenSymbol + i}
                 strat={strat}
-                currentMangoDeposits={currentMangoDeposits}
+                currentDeposits={currentDeposits}
               />
             ))
           ) : (
@@ -371,7 +372,7 @@ const AccountOverview = () => {
         <DepositModal
           governedTokenAccount={currentAccount}
           mangoAccounts={mngoAccounts}
-          currentPosition={currentMangoDeposits}
+          currentPosition={currentDeposits}
           apy={proposedInvestment.apy}
           handledMint={proposedInvestment.handledMint}
           onClose={() => {
@@ -455,13 +456,13 @@ const AccountOverview = () => {
 interface StrategyCardProps {
   onClick?: () => void
   strat: TreasuryStrategy
-  currentMangoDeposits: number
+  currentDeposits: number
 }
 
 const StrategyCard = ({
   onClick,
   strat,
-  currentMangoDeposits,
+  currentDeposits,
 }: StrategyCardProps) => {
   const {
     handledTokenImgSrc,
@@ -471,15 +472,24 @@ const StrategyCard = ({
     apy,
   } = strat
   const currentPositionFtm = new BigNumber(
-    currentMangoDeposits.toFixed(0)
+    currentDeposits.toFixed(0)
   ).toFormat()
   return (
     <div className="border border-fgd-4 flex items-center justify-between mt-2 p-4 rounded-md">
       <div className="flex items-center">
+        {strat.protocolLogoSrc ? (
+          <img
+            src={strat.protocolLogoSrc}
+            style={{
+              marginRight: -8,
+            }}
+            className="h-8 rounded-full w-8"
+          ></img>
+        ) : null}
         {handledTokenImgSrc ? (
           <img
             src={strat.handledTokenImgSrc}
-            className="h-8 mr-3 rounded-full w-8"
+            className="h-8 mr-4 rounded-full w-8"
           ></img>
         ) : null}
         <div>

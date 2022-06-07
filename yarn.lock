@@ -2795,10 +2795,10 @@
     buffer-layout "^1.2.0"
     isomorphic-fetch "^3.0.0"
 
-"@solendprotocol/solend-sdk@^0.5.5":
-  version "0.5.5"
-  resolved "https://registry.yarnpkg.com/@solendprotocol/solend-sdk/-/solend-sdk-0.5.5.tgz#a8077532e1ca2ecd7d619fee4f339cd6b33e4a04"
-  integrity sha512-7eZSM/vl7Bijbg3n/vnO4z5p3VX7eb453pKkVeiT6FmQuC403GrNU3wUz3TVJZlzhsg76X81udK2qZaOKaWrZQ==
+"@solendprotocol/solend-sdk@^0.5.7":
+  version "0.5.7"
+  resolved "https://registry.yarnpkg.com/@solendprotocol/solend-sdk/-/solend-sdk-0.5.7.tgz#87c376771d4ba514dab123b97f92742e9fc2304b"
+  integrity sha512-eAbmYJTctFvCWvx2yH757NDBupA1IPAk3Qia56/HdTAbd8S1+P+anLGvcr1QdyCzgwg/sLW/3ys6DR8xYRmYjg==
   dependencies:
     "@pythnetwork/client" "^2.5.1"
     "@solana/buffer-layout" "^3.0.0"

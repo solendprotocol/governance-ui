@@ -1,6 +1,7 @@
 import Modal from '@components/Modal'
 import ModalHeader from './ModalHeader'
 import MangoDeposit from './MangoDepositComponent'
+import SolendDeposit from './SolendDepositComponent'
 import BigNumber from 'bignumber.js'
 
 const DepositModal = ({
@@ -29,16 +30,23 @@ const DepositModal = ({
         TokenName={handledTokenName}
         strategy={strategyName}
       />
-
-      {protocolName === 'Mango' ? (
+      {protocolName === 'Mango' && (
         <MangoDeposit
           governedTokenAccount={governedTokenAccount}
           mangoAccounts={mangoAccounts}
           handledMint={handledMint}
           currentPositionFtm={currentPositionFtm}
           createProposalFcn={createProposalFcn}
-        ></MangoDeposit>
-      ) : null}
+        />
+      )}
+      {protocolName === 'Solend' && (
+        <SolendDeposit
+          governedTokenAccount={governedTokenAccount}
+          handledMint={handledMint}
+          currentPositionFtm={currentPositionFtm}
+          createProposalFcn={createProposalFcn}
+        />
+      )}
     </Modal>
   )
 }
