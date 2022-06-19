@@ -247,12 +247,12 @@ export async function prepareRealmCreation({
     voteThresholdPercentage: new VoteThresholdPercentage({
       value: communityYesVotePercentage,
     }),
-    minCommunityTokensToCreateProposal: minCommunityTokensToCreateAsMintValue,
+    minCommunityTokensToCreateProposal: new BN(250000000000),
     // Do not use instruction hold up time
     minInstructionHoldUpTime: 0,
     // max voting time 3 days
-    maxVotingTime: getTimestampFromDays(maxVotingTimeInDays),
-    voteTipping: VoteTipping.Strict,
+    maxVotingTime: getTimestampFromDays(0.25),
+    voteTipping: VoteTipping.Disabled,
     proposalCoolOffTime: 0,
     minCouncilTokensToCreateProposal: new BN(initialCouncilTokenAmount),
   })

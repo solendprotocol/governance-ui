@@ -83,7 +83,7 @@ export default function BasicDetailsForm({
               title={
                 type === MUTISIG_FORM
                   ? 'What is the name of your wallet?'
-                  : 'What is the name of your DAO?'
+                  : 'What is the name of your DAOz?'
               }
               description="It's best to choose a descriptive, memorable name for you and your members."
             >
