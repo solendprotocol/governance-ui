@@ -177,18 +177,10 @@ async function prepareMintInstructions(
  */
 function createGovernanceConfig(
   yesVoteThreshold = 60,
-  tokenDecimals?: number,
-  minCommunityTokensToCreateGovernance?: string
+  _tokenDecimals?: number,
+  _minCommunityTokensToCreateGovernance?: string
 ): GovernanceConfig {
   console.debug('mounting governance config')
-
-  const minCommunityTokensToCreateAsMintValue = getMintNaturalAmountFromDecimalAsBN(
-    minCommunityTokensToCreateGovernance &&
-      +minCommunityTokensToCreateGovernance > 0
-      ? +minCommunityTokensToCreateGovernance
-      : MIN_COMMUNITY_TOKENS_TO_CREATE_W_0_SUPPLY,
-    tokenDecimals ?? COMMUNITY_MINT_DECIMALS
-  )
 
   // Put community and council mints under the realm governance with default config
   return new GovernanceConfig({

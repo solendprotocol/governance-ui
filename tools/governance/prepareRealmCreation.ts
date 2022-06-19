@@ -66,7 +66,6 @@ export async function prepareRealmCreation({
 
   realmName,
   tokensToGovernThreshold,
-  maxVotingTimeInDays = 3,
 
   nftCollectionCount = 0,
   existingCommunityMintPk,
