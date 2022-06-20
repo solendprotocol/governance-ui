@@ -47,11 +47,10 @@ function App({ Component, pageProps }) {
   )
   const { getNfts } = useTreasuryAccountStore()
   const { getOwnedDeposits, resetDepositState } = useDepositStore()
-  const { realm, realmInfo, symbol, ownTokenRecord, config } = useRealm()
+  const { realm, ownTokenRecord, config } = useRealm()
   const wallet = useWalletStore((s) => s.current)
   const connection = useWalletStore((s) => s.connection)
   const client = useVotePluginsClientStore((s) => s.state.vsrClient)
-  const realmName = realmInfo?.displayName ?? realm?.account?.name
   const prevStringifyPossibleNftsAccounts = usePrevious(
     JSON.stringify(possibleNftsAccounts)
   )

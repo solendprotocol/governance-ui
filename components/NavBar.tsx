@@ -1,6 +1,3 @@
-import useQueryContext from '@hooks/useQueryContext'
-import Link from 'next/link'
-
 import ConnectWalletButton from './ConnectWalletButton'
 import NotificationsSwitch from './NotificationsSwitch'
 import ThemeSwitch from './ThemeSwitch'
