@@ -110,7 +110,7 @@ function App({ Component, pageProps }) {
         <meta property="og:title" content={title} />
         <meta
           name="description"
-          content="The governance for the Solend community. Have your voice heard in the biggest algorithmic lending protocol on Solana."
+          content="Governance app for the Solend community. Have your voice heard in the largest algorithmic lending protocol on Solana."
         />
         <meta property="og:type" content="website" />
         <meta property="og:title" content="Solend DAO" />
@@ -122,7 +122,7 @@ function App({ Component, pageProps }) {
         <meta name="twitter:site" content="@solendprotocol" />
         <meta
           property="og:description"
-          content="The governance for the Solend community. Have your voice heard in the biggest algorithmic lending protocol on Solana."
+          content="Governance app for the Solend community. Have your voice heard in the largest algorithmic lending protocol on Solana."
         />
         <title>{title}</title>
         <>
