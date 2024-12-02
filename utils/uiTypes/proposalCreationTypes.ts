@@ -8,7 +8,6 @@ import { SupportedMintName } from '@tools/sdk/solend/configuration'
 import { SplTokenUIName } from '@utils/splTokens'
 import { DepositWithMintAccount, Voter } from 'VoteStakeRegistry/sdk/accounts'
 import { LockupKind } from 'VoteStakeRegistry/tools/types'
-import { consts as foresightConsts } from '@foresight-tmp/foresight-sdk'
 import { AssetAccount } from '@utils/uiTypes/assets'
 
 export interface UiInstruction {
@@ -267,11 +266,6 @@ export interface ForesightMakeResolveMarketParams extends ForesightHasMarketId {
   winner: number
 }
 
-export interface ForesightMakeSetMarketMetadataParams
-  extends ForesightHasMarketId {
-  content: string
-  field: foresightConsts.MarketMetadataFieldName
-}
 export interface Base64InstructionForm {
   governedAccount: AssetAccount | undefined
   base64: string

@@ -1,9 +1,5 @@
 import _ from 'lodash'
 import useGovernanceAssets from '@hooks/useGovernanceAssets'
-import {
-  governance as foresightGov,
-  consts as foresightConsts,
-} from '@foresight-tmp/foresight-sdk'
 import { isFormValid } from '@utils/formValidation'
 import { AssetAccount } from '@utils/uiTypes/assets'
 import {
@@ -19,7 +15,6 @@ import {
   ForesightHasMarketId,
   ForesightHasMarketListId,
   ForesightMakeResolveMarketParams,
-  ForesightMakeSetMarketMetadataParams,
   UiInstruction,
 } from '@utils/uiTypes/proposalCreationTypes'
 import Input from '@components/inputs/Input'
@@ -30,8 +25,6 @@ import { ObjectSchema, StringSchema, NumberSchema } from 'yup'
 import useRealm from '@hooks/useRealm'
 import useWalletStore from 'stores/useWalletStore'
 import { NewProposalContext } from '../../pages/dao/[symbol]/proposal/new'
-import Select from '@components/inputs/Select'
-import TextareaProps from '@components/inputs/Textarea'
 
 type EmptyObject = Record<string, never>
 type SetFormErrors = Dispatch<React.SetStateAction<EmptyObject>>
@@ -39,11 +32,7 @@ type SetFormErrors = Dispatch<React.SetStateAction<EmptyObject>>
 export function getFilteredTokenAccounts(): AssetAccount[] {
   const { governedTokenAccountsWithoutNfts } = useGovernanceAssets()
   return governedTokenAccountsWithoutNfts.filter((x) => {
-    const transferAddress = x.extensions.transferAddress
-    return (
-      transferAddress?.equals(foresightGov.DEVNET_TREASURY) ||
-      transferAddress?.equals(foresightGov.MAINNET_TREASURY)
-    )
+    return false
   })
 }
 
@@ -371,45 +360,5 @@ export function ForesightWinnerInput(
       }
       error={props.formErrors['winner']}
     />
-  )
-}
-
-export function ForesightContentInput(
-  props: InputProps<ForesightMakeSetMarketMetadataParams>
-) {
-  return (
-    <TextareaProps
-      label="Content"
-      value={props.form.content}
-      type="text"
-      onChange={(evt) =>
-        props.handleSetForm({
-          value: evt.target.value,
-          propertyName: 'content',
-        })
-      }
-      error={props.formErrors['content']}
-    />
-  )
-}
-
-export function ForesightMarketMetadataFieldSelect(
-  props: InputProps<ForesightMakeSetMarketMetadataParams>
-) {
-  return (
-    <Select
-      label="Field"
-      value={props.form.field}
-      onChange={(value) => {
-        props.handleSetForm({ value, propertyName: 'field' })
-      }}
-      error={props.formErrors['field']}
-    >
-      {Object.keys(foresightConsts.MARKET_METADATA_FIELDS).map((value) => (
-        <Select.Option key={value} value={value}>
-          {value}
-        </Select.Option>
-      ))}
-    </Select>
   )
 }

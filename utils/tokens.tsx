@@ -231,7 +231,7 @@ export function approveTokenTransfer(
 export async function getMultipleAccountInfoChunked(
   connection: Connection,
   keys: PublicKey[],
-  commitment: Commitment | undefined = 'recent'
+  commitment: Commitment | undefined = 'processed'
 ) {
   return (
     await Promise.all(

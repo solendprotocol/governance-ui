@@ -57,7 +57,7 @@ async function awaitTransactionSignatureConfirmation(
   //after that time we will start to check blockHeight
   startTimeoutCheckThreshold: number,
   connection: Connection,
-  commitment: Commitment = 'recent',
+  commitment: Commitment = 'processed',
   queryStatus = false,
   startingBlock: Block
 ) {
@@ -274,7 +274,7 @@ export async function sendSignedTransaction({
       txid,
       timeout,
       connection,
-      'recent',
+      'processed',
       true,
       block
     )

@@ -232,7 +232,7 @@ const getDepositsAdditionalInfoEvents = async (
     const batchOfDeposits = await simulateTransaction(
       connection,
       transaction,
-      'recent'
+      'processed'
     )
     parser.parseLogs(batchOfDeposits.value.logs!, (event) => {
       events.push(event)

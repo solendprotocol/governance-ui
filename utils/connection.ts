@@ -29,7 +29,7 @@ export function getConnectionContext(cluster: string): ConnectionContext {
   const ENDPOINT = ENDPOINTS.find((e) => e.name === cluster) || ENDPOINTS[0]
   return {
     cluster: ENDPOINT!.name as EndpointTypes,
-    current: new Connection(ENDPOINT!.url, 'recent'),
+    current: new Connection(ENDPOINT!.url, 'processed'),
     endpoint: ENDPOINT!.url,
   }
 }

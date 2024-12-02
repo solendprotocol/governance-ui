@@ -65,13 +65,7 @@ import MakeChangeSpotMarket from './components/instructions/Mango/MakeChangeSpot
 import MakeCreatePerpMarket from './components/instructions/Mango/MakeCreatePerpMarket'
 import useCreateProposal from '@hooks/useCreateProposal'
 import CastleDeposit from './components/instructions/Castle/CastleDeposit'
-import MakeInitMarketParams from './components/instructions/Foresight/MakeInitMarketParams'
-import MakeInitMarketListParams from './components/instructions/Foresight/MakeInitMarketListParams'
-import MakeInitCategoryParams from './components/instructions/Foresight/MakeInitCategoryParams'
-import MakeResolveMarketParams from './components/instructions/Foresight/MakeResolveMarketParams'
-import MakeAddMarketListToCategoryParams from './components/instructions/Foresight/MakeAddMarketListToCategoryParams'
 import RealmConfig from './components/instructions/RealmConfig'
-import MakeSetMarketMetadataParams from './components/instructions/Foresight/MakeSetMarketMetadataParams'
 import CloseTokenAccount from './components/instructions/CloseTokenAccount'
 import { InstructionDataWithHoldUpTime } from 'actions/createProposal'
 import CastleWithdraw from './components/instructions/Castle/CastleWithdraw'
@@ -455,48 +449,6 @@ const New = () => {
             index={idx}
             governance={governance}
           ></MakeSetMarketMode>
-        )
-      case Instructions.ForesightInitMarket:
-        return (
-          <MakeInitMarketParams
-            index={idx}
-            governance={governance}
-          ></MakeInitMarketParams>
-        )
-      case Instructions.ForesightInitMarketList:
-        return (
-          <MakeInitMarketListParams
-            index={idx}
-            governance={governance}
-          ></MakeInitMarketListParams>
-        )
-      case Instructions.ForesightInitCategory:
-        return (
-          <MakeInitCategoryParams
-            index={idx}
-            governance={governance}
-          ></MakeInitCategoryParams>
-        )
-      case Instructions.ForesightResolveMarket:
-        return (
-          <MakeResolveMarketParams
-            index={idx}
-            governance={governance}
-          ></MakeResolveMarketParams>
-        )
-      case Instructions.ForesightAddMarketListToCategory:
-        return (
-          <MakeAddMarketListToCategoryParams
-            index={idx}
-            governance={governance}
-          ></MakeAddMarketListToCategoryParams>
-        )
-      case Instructions.ForesightSetMarketMetadata:
-        return (
-          <MakeSetMarketMetadataParams
-            index={idx}
-            governance={governance}
-          ></MakeSetMarketMetadataParams>
         )
       case Instructions.RealmConfig:
         return <RealmConfig index={idx} governance={governance}></RealmConfig>

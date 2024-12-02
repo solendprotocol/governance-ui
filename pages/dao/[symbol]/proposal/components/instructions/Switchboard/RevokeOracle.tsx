@@ -7,11 +7,6 @@ import {
   Governance,
   getGovernance,
 } from '@solana/spl-governance'
-/*import {
-  governance as foresightGov,
-  utils,
-  consts,
-} from '@foresight-tmp/foresight-sdk'*/
 import { SwitchboardRevokeOracleForm } from '@utils/uiTypes/proposalCreationTypes'
 import { PublicKey } from '@solana/web3.js'
 import Input from '@components/inputs/Input'

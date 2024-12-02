@@ -19,7 +19,7 @@ import { withSentry } from '@sentry/nextjs'
 const handler = async (req: NextApiRequest, res: NextApiResponse) => {
   const conn = new Connection(
     'https://explorer-api.mainnet-beta.solana.com',
-    'recent'
+    'processed'
   )
 
   console.log('fetching spl-gov instances...')
