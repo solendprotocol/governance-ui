@@ -31,7 +31,7 @@ type SetFormErrors = Dispatch<React.SetStateAction<EmptyObject>>
 
 export function getFilteredTokenAccounts(): AssetAccount[] {
   const { governedTokenAccountsWithoutNfts } = useGovernanceAssets()
-  return governedTokenAccountsWithoutNfts.filter((x) => {
+  return governedTokenAccountsWithoutNfts.filter((_x) => {
     return false
   })
 }
