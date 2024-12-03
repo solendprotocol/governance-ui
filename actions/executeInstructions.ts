@@ -5,12 +5,11 @@ import {
   RpcContext,
   withExecuteTransaction,
 } from '@solana/spl-governance'
-import { Transaction, TransactionInstruction } from '@solana/web3.js'
-import { sendSignedTransaction, signTransaction } from '@utils/send'
+import { ComputeBudgetProgram, TransactionInstruction } from '@solana/web3.js'
 import {
-  sendTransactionsV2,
+  sendTransactionsV3,
   SequenceType,
-  transactionInstructionsToTypedInstructionsSets,
+  txBatchesToInstructionSetWithSigners,
 } from '@utils/sendTransactions'
 
 export const executeInstructions = async (
@@ -31,41 +30,46 @@ export const executeInstructions = async (
         proposal.account.governance,
         proposal.pubkey,
         instruction.pubkey,
-        [instruction.account.getSingleInstruction()]
+        [...instruction.account.getAllInstructions()]
       )
     )
   )
-
   if (multiTransactionMode) {
-    await sendTransactionsV2({
+    const txes = [...instructions.map((x) => [x])].map((txBatch, batchIdx) => {
+      const batchWithComputeBudget = [
+        ComputeBudgetProgram.setComputeUnitLimit({ units: 1_000_000 }),
+        ...txBatch,
+      ]
+      return {
+        instructionsSet: txBatchesToInstructionSetWithSigners(
+          batchWithComputeBudget,
+          [],
+          batchIdx
+        ),
+        sequenceType: SequenceType.Sequential,
+      }
+    })
+    await sendTransactionsV3({
       connection,
-      showUiComponent: true,
-      wallet: wallet!,
-      signersSet: Array(instructions.length).fill([]),
-      TransactionInstructions: instructions.map((x) =>
-        transactionInstructionsToTypedInstructionsSets(
-          [x],
-          SequenceType.Parallel
-        )
-      ),
+      wallet,
+      transactionInstructions: txes,
     })
   } else {
-    const transaction = new Transaction()
-
-    transaction.add(...instructions)
-
-    const signedTransaction = await signTransaction({
-      transaction,
-      wallet,
-      connection,
-      signers: [],
+    const txes = [instructions].map((txBatch) => {
+      return {
+        instructionsSet: txBatch.map((x) => {
+          return {
+            transactionInstruction: x,
+          }
+        }),
+        sequenceType: SequenceType.Sequential,
+      }
     })
 
-    await sendSignedTransaction({
-      signedTransaction,
+    await sendTransactionsV3({
       connection,
-      sendingMessage: 'Executing instruction',
-      successMessage: 'Execution finalized',
+      wallet,
+      transactionInstructions: txes,
     })
   }
 }

@@ -1,10 +1,14 @@
-import { BN, EventParser } from '@project-serum/anchor'
+import { BN, EventParser, Idl, Program } from '@coral-xyz/anchor'
+import { ProgramAccount, Realm } from '@solana/spl-governance'
 import {
-  ProgramAccount,
-  Realm,
-  simulateTransaction,
-} from '@solana/spl-governance'
-import { PublicKey, Transaction, Connection } from '@solana/web3.js'
+  PublicKey,
+  Transaction,
+  Connection,
+  ComputeBudgetProgram,
+} from '@solana/web3.js'
+import { SIMULATION_WALLET } from '@tools/constants'
+import { DAYS_PER_MONTH, SECS_PER_DAY } from '@utils/dateTools'
+import { chunks } from '@utils/helpers'
 import { tryGetMint } from '@utils/tokens'
 import {
   getRegistrarPDA,
@@ -13,11 +17,31 @@ import {
   DepositWithMintAccount,
   LockupType,
   Registrar,
+  Voter,
+  Deposit,
 } from 'VoteStakeRegistry/sdk/accounts'
 import { tryGetVoter, tryGetRegistrar } from 'VoteStakeRegistry/sdk/api'
 import { VsrClient } from 'VoteStakeRegistry/sdk/client'
-import { DAYS_PER_MONTH } from './dateTools'
 import { MONTHLY } from './types'
+
+const VOTER_INFO_EVENT_NAME = 'VoterInfo'
+const DEPOSIT_EVENT_NAME = 'DepositEntryInfo'
+// The wallet can be any existing account for the simulation
+// Note: when running a local validator ensure the account is copied from devnet: --clone ENmcpFCpxN1CqyUjuog9yyUVfdXBKF3LVCwLr7grJZpk -ud
+const simulationWallet = new PublicKey(SIMULATION_WALLET)
+
+const logsToEvents = <T extends Idl>(
+  program: Program<T>,
+  logs: string[],
+  walletPk: string
+): {
+  walletPk: string
+  event: any
+}[] => {
+  const parser = new EventParser(program.programId, program.coder)
+  const errors = parser.parseLogs(logs)
+  return [...errors].map((event) => ({ event, walletPk }))
+}
 
 export const getDeposits = async ({
   isUsed = true,
@@ -35,17 +59,16 @@ export const getDeposits = async ({
   connection: Connection
 }) => {
   const clientProgramId = client.program.programId
-  const { registrar } = await getRegistrarPDA(
+  const { registrar } = getRegistrarPDA(
     realmPk,
     communityMintPk,
     clientProgramId
   )
-  const { voter } = await getVoterPDA(registrar, walletPk, clientProgramId)
+  const { voter } = getVoterPDA(registrar, walletPk, clientProgramId)
   const existingVoter = await tryGetVoter(voter, client)
   const existingRegistrar = await tryGetRegistrar(registrar, client)
   const mintCfgs = existingRegistrar?.votingMints || []
   const mints = {}
-  let votingPower = new BN(0)
   let votingPowerFromDeposits = new BN(0)
   let deposits: DepositWithMintAccount[] = []
   for (const i of mintCfgs) {
@@ -68,7 +91,6 @@ export const getDeposits = async ({
     const usedDeposits = deposits.filter((x) => x.isUsed)
     const areThereAnyUsedDeposits = usedDeposits.length
     if (areThereAnyUsedDeposits) {
-      console.log({ client, usedDeposits, connection, registrar, voter })
       const events = await getDepositsAdditionalInfoEvents(
         client,
         usedDeposits,
@@ -76,8 +98,6 @@ export const getDeposits = async ({
         registrar,
         voter
       )
-      const DEPOSIT_EVENT_NAME = 'DepositEntryInfo'
-      const VOTER_INFO_EVENT_NAME = 'VoterInfo'
       const depositsInfo = events.filter((x) => x.name === DEPOSIT_EVENT_NAME)
       const votingPowerEntry = events.find(
         (x) => x.name === VOTER_INFO_EVENT_NAME
@@ -103,13 +123,140 @@ export const getDeposits = async ({
       ) {
         votingPowerFromDeposits = votingPowerEntry.data.votingPowerBaseline
       }
-      if (votingPowerEntry && !votingPowerEntry.data.votingPower.isZero()) {
-        votingPower = votingPowerEntry.data.votingPower
-      }
-      return { votingPower, deposits, votingPowerFromDeposits }
+
+      return { deposits, votingPowerFromDeposits }
     }
   }
-  return { votingPower, deposits, votingPowerFromDeposits }
+  return { deposits, votingPowerFromDeposits }
+}
+
+const getVotingPowersForWallets = async ({
+  client,
+  registrarPk,
+  existingRegistrar,
+  walletPks,
+  connection,
+  latestBlockhash,
+}: {
+  client: VsrClient
+  connection: Connection
+  registrarPk: PublicKey
+  existingRegistrar: Registrar
+  walletPks: PublicKey[]
+  latestBlockhash: Readonly<{
+    blockhash: string
+    lastValidBlockHeight: number
+  }>
+}) => {
+  const clientProgramId = client.program.programId
+  const voterPks: PublicKey[] = []
+  const voters: (Voter | null)[] = []
+  const encodedTransactionsParsedByWallets: {
+    walletPk: string
+    tx: string
+  }[] = []
+  const mintCfgs = existingRegistrar.votingMints
+  const events: {
+    walletPk: string
+    event: any
+  }[] = []
+  for (const walletPk of walletPks) {
+    const { voter } = getVoterPDA(registrarPk, walletPk, clientProgramId)
+    voterPks.push(voter)
+  }
+
+  const voterAccsResponse = await client?.program.account.voter.fetchMultiple(
+    voterPks
+  )
+  voters.push(...(voterAccsResponse as (Voter | null)[]))
+
+  if (voters.length) {
+    for (const i in voters) {
+      const voter = voters[i]
+      const voterPk = voterPks[i]
+      if (voter) {
+        const hasDepositsWithCommunityMint = voter.deposits.find(
+          (x) =>
+            x.isUsed &&
+            mintCfgs[x.votingMintConfigIdx].baselineVoteWeightScaledFactor.gtn(
+              0
+            )
+        )
+        if (hasDepositsWithCommunityMint) {
+          const simulationWallet = new PublicKey(SIMULATION_WALLET)
+
+          const originalTx = new Transaction({ feePayer: simulationWallet })
+          const logVoterInfoIx = await client.program.methods
+            .logVoterInfo(1, 1)
+            .accounts({ registrar: registrarPk, voter: voterPk })
+            .instruction()
+          originalTx.add(logVoterInfoIx)
+
+          const transaction = originalTx
+          transaction.lastValidBlockHeight =
+            latestBlockhash.lastValidBlockHeight
+          transaction.recentBlockhash = latestBlockhash.blockhash
+          //@ts-ignore
+          const message = transaction._compile()
+          const signData = message.serialize()
+          //@ts-ignore
+          const wireTransaction = transaction._serialize(signData)
+          const encodedTransaction = wireTransaction.toString('base64')
+          encodedTransactionsParsedByWallets.push({
+            walletPk: voter.voterAuthority.toBase58(),
+            tx: encodedTransaction,
+          })
+        }
+      }
+    }
+
+    const chunkedEncodedTransactionsParsed = chunks(
+      encodedTransactionsParsedByWallets,
+      100
+    )
+    // TODO Batch alert
+    const simulations = await Promise.all(
+      chunkedEncodedTransactionsParsed.map((txChunk) =>
+        fetch(connection.rpcEndpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify([
+            ...txChunk.map((encodedTransaction) => ({
+              jsonrpc: '2.0',
+              id: encodedTransaction.walletPk,
+              method: 'simulateTransaction',
+              params: [
+                encodedTransaction.tx,
+                {
+                  commitment: 'recent',
+                  encoding: 'base64',
+                },
+              ],
+            })),
+          ]),
+        })
+      )
+    )
+    const logsJsons = await Promise.all(simulations.map((x) => x.json()))
+    for (const logJson of logsJsons) {
+      for (const result of logJson) {
+        events.push(
+          ...logsToEvents(client.program, result.result.value.logs!, result.id)
+        )
+      }
+    }
+
+    const votingPowersPerWallet = events
+      .filter((x) => x.event.name === VOTER_INFO_EVENT_NAME)
+      .map((x) => ({
+        walletPk: x.walletPk,
+        votingPower: (x.event?.data?.votingPower as BN) || new BN(0),
+      }))
+    return votingPowersPerWallet
+  }
+  return null
 }
 
 export const calcMultiplier = ({
@@ -117,31 +264,33 @@ export const calcMultiplier = ({
   maxExtraLockupVoteWeightScaledFactor,
   lockupSecs,
   lockupSaturationSecs,
+  isVested = false,
 }: {
   depositScaledFactor: number
   maxExtraLockupVoteWeightScaledFactor: number
   lockupSecs: number
   lockupSaturationSecs: number
+  isVested?: boolean
 }) => {
-  //   if (isVested) {
-  //     const onMonthSecs = SECS_PER_DAY * DAYS_PER_MONTH
-  //     const n_periods_before_saturation = lockupSaturationSecs / onMonthSecs
-  //     const n_periods = lockupSecs / onMonthSecs
-  //     const n_unsaturated_periods = Math.min(
-  //       n_periods,
-  //       n_periods_before_saturation
-  //     )
-  //     const n_saturated_periods = Math.max(0, n_periods - n_unsaturated_periods)
-  //     const calc =
-  //       (depositScaledFactor +
-  //         (maxExtraLockupVoteWeightScaledFactor / n_periods) *
-  //           (n_saturated_periods +
-  //             ((n_unsaturated_periods + 1) * n_unsaturated_periods) /
-  //               2 /
-  //               n_periods_before_saturation)) /
-  //       depositScaledFactor
-  //     return depositScaledFactor !== 0 ? calc : 0
-  //   }
+  if (isVested) {
+    const onMonthSecs = SECS_PER_DAY * DAYS_PER_MONTH
+    const n_periods_before_saturation = lockupSaturationSecs / onMonthSecs
+    const n_periods = lockupSecs / onMonthSecs
+    const n_unsaturated_periods = Math.min(
+      n_periods,
+      n_periods_before_saturation
+    )
+    const n_saturated_periods = Math.max(0, n_periods - n_unsaturated_periods)
+    const calc =
+      (depositScaledFactor +
+        (maxExtraLockupVoteWeightScaledFactor / n_periods) *
+          (n_saturated_periods +
+            ((n_unsaturated_periods + 1) * n_unsaturated_periods) /
+              2 /
+              n_periods_before_saturation)) /
+      depositScaledFactor
+    return depositScaledFactor !== 0 ? calc : 0
+  }
   const calc =
     (depositScaledFactor +
       (maxExtraLockupVoteWeightScaledFactor *
@@ -176,7 +325,8 @@ export const getPeriod = (
 export const calcMintMultiplier = (
   lockupSecs: number,
   registrar: Registrar | null,
-  realm: ProgramAccount<Realm> | undefined
+  realm: ProgramAccount<Realm> | undefined,
+  isVested?: boolean
 ) => {
   const mintCfgs = registrar?.votingMints
   const mintCfg = mintCfgs?.find(
@@ -197,6 +347,7 @@ export const calcMintMultiplier = (
       maxExtraLockupVoteWeightScaledFactor: maxExtraLockupVoteWeightScaledFactorNum,
       lockupSaturationSecs: lockupSaturationSecsNum,
       lockupSecs,
+      isVested,
     })
 
     return parseFloat(calced.toFixed(2))
@@ -211,12 +362,10 @@ const getDepositsAdditionalInfoEvents = async (
   registrar: PublicKey,
   voter: PublicKey
 ) => {
-  // The wallet can be any existing account for the simulation
-  // Note: when running a local validator ensure the account is copied from devnet: --clone ENmcpFCpxN1CqyUjuog9yyUVfdXBKF3LVCwLr7grJZpk -ud
-  const walletPk = new PublicKey('ENmcpFCpxN1CqyUjuog9yyUVfdXBKF3LVCwLr7grJZpk')
   //because we switch wallet in here we can't use rpc from npm module
   //anchor dont allow to switch wallets inside existing client
   //parse events response as anchor do
+  const latestBlockhash = await connection.getLatestBlockhash()
   const events: any[] = []
   const parser = new EventParser(client.program.programId, client.program.coder)
   const maxRange = 8
@@ -224,20 +373,70 @@ const getDepositsAdditionalInfoEvents = async (
   const numberOfSimulations = Math.ceil(maxIndex / maxRange)
   for (let i = 0; i < numberOfSimulations; i++) {
     const take = maxRange
-    const transaction = new Transaction({ feePayer: walletPk })
+    const transaction = new Transaction({ feePayer: simulationWallet })
+    transaction.lastValidBlockHeight = latestBlockhash.lastValidBlockHeight
+    transaction.recentBlockhash = latestBlockhash.blockhash
     const logVoterInfoIx = await client.program.methods
       .logVoterInfo(maxRange * i, take)
       .accounts({ registrar, voter })
       .instruction()
-    transaction.add(logVoterInfoIx)
-    const batchOfDeposits = await simulateTransaction(
-      connection,
-      transaction,
-      'recent'
+    transaction.add(
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 1_000_000 })
     )
-    parser.parseLogs(batchOfDeposits.value.logs!, (event) => {
-      events.push(event)
-    })
+    transaction.add(logVoterInfoIx)
+    // TODO cache using fetchVotingPowerSimulation
+
+    const batchOfDeposits = await connection.simulateTransaction(transaction)
+    const logEvents = parser.parseLogs(batchOfDeposits.value.logs!)
+    events.push(...[...logEvents])
   }
   return events
+}
+
+export const getLockTokensVotingPowerPerWallet = async (
+  walletsPks: PublicKey[],
+  realm: ProgramAccount<Realm>,
+  client: VsrClient,
+  connection: Connection
+) => {
+  const { registrar } = getRegistrarPDA(
+      realm.pubkey,
+      realm.account.communityMint,
+      client.program.programId
+  )
+  const existingRegistrar = await tryGetRegistrar(registrar, client)
+  const latestBlockhash = await connection.getLatestBlockhash()
+  const votingPowers = await getVotingPowersForWallets({
+    client: client,
+    registrarPk: registrar,
+    existingRegistrar: existingRegistrar!,
+    walletPks: walletsPks,
+    connection: connection,
+    latestBlockhash,
+  })
+
+  if (votingPowers) {
+    const votingPowerObj: Record<string, BN> = {}
+    for (const record of votingPowers) {
+      votingPowerObj[record.walletPk] = record.votingPower
+    }
+
+    return votingPowerObj
+  }
+  return {}
+}
+
+export const getDepositType = (deposit: Deposit): LockupType => {
+  if (typeof deposit.lockup.kind.monthly !== 'undefined') {
+    return 'monthly'
+  } else if (typeof deposit.lockup.kind.cliff !== 'undefined') {
+    return 'cliff'
+  } else if (typeof deposit.lockup.kind.constant !== 'undefined') {
+    return 'constant'
+  } else if (typeof deposit.lockup.kind.daily !== 'undefined') {
+    return 'daily'
+  } else if (typeof deposit.lockup.kind.none !== 'undefined') {
+    return 'none'
+  }
+  return 'none'
 }

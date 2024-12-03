@@ -19,8 +19,7 @@ const voteTypeDomain = (type: VoteType) => {
 
 const loadD3 = () => import('d3')
 
-type Unpromise<P> = P extends Promise<infer T> ? T : never
-type D3 = Unpromise<ReturnType<typeof loadD3>>
+type D3 = Awaited<ReturnType<typeof loadD3>>
 
 interface Props {
   className?: string
@@ -56,7 +55,7 @@ function Content(props: Props) {
 
       const hierarchy = d3
         .hierarchy({ children: props.data })
-        .sum((d: any) => (d.votesCast ? d.votesCast.toNumber() : 0))
+        .sum((d: any) => (d.votesCast ? d.votesCast.toString() : 0))
         .sort((a, b) => (b.value || 0) - (a.value || 0))
 
       const pack = d3.pack().size([props.width, props.height]).padding(3)
@@ -122,6 +121,7 @@ function Content(props: Props) {
         .attr('y', '0.5em')
         .text((d) => abbreviateAddress(d.data.name))
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- TODO please fix, it can cause difficult bugs. You might wanna check out https://bobbyhadz.com/blog/react-hooks-exhaustive-deps for info. -@asktree
   }, [
     container,
     props.data,

@@ -3,7 +3,7 @@ import useTreasuryAccountStore from 'stores/useTreasuryAccountStore'
 import AccountLabel from './AccountHeader'
 import GovernedAccountSelect from 'pages/dao/[symbol]/proposal/components/GovernedAccountSelect'
 import useGovernanceAssets from '@hooks/useGovernanceAssets'
-import { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import {
   StakingViewForm,
   UiInstruction,
@@ -16,30 +16,29 @@ import useRealm from '@hooks/useRealm'
 import VoteBySwitch from 'pages/dao/[symbol]/proposal/components/VoteBySwitch'
 import Button from '@components/Button'
 import Tooltip from '@components/Tooltip'
-import useWalletStore from 'stores/useWalletStore'
 import { getStakeSchema } from '@utils/validations'
 import { getConvertToMsolInstruction } from '@utils/instructionTools'
-import {
-  getInstructionDataFromBase64,
-  Governance,
-  ProgramAccount,
-} from '@solana/spl-governance'
+import { getInstructionDataFromBase64 } from '@solana/spl-governance'
 import useQueryContext from '@hooks/useQueryContext'
 import { useRouter } from 'next/router'
 import { notify } from '@utils/notifications'
 import useCreateProposal from '@hooks/useCreateProposal'
 import { AssetAccount } from '@utils/uiTypes/assets'
+import useWalletOnePointOh from '@hooks/useWalletOnePointOh'
+import { useRealmQuery } from '@hooks/queries/realm'
+import useLegacyConnectionContext from '@hooks/useLegacyConnectionContext'
+import {useVoteByCouncilToggle} from "@hooks/useVoteByCouncilToggle";
 
 const ConvertToMsol = () => {
-  const { canChooseWhoVote, realm, symbol } = useRealm()
+  const realm = useRealmQuery().data?.result
+  const {symbol } = useRealm()
   const { canUseTransferInstruction } = useGovernanceAssets()
   const { governedTokenAccounts } = useGovernanceAssets()
   const { fmtUrlWithCluster } = useQueryContext()
   const router = useRouter()
   const { handleCreateProposal } = useCreateProposal()
-  const connection = useWalletStore((s) => s.connection)
-  const wallet = useWalletStore((s) => s.current)
-  const { fetchRealmGovernance } = useWalletStore((s) => s.actions)
+  const connection = useLegacyConnectionContext()
+  const wallet = useWalletOnePointOh()
   const currentAccount = useTreasuryAccountStore((s) => s.currentAccount)
   const notConnectedMessage =
     'You need to be connected to your wallet to have the ability to create a staking proposal'
@@ -53,7 +52,7 @@ const ConvertToMsol = () => {
     description: '',
   })
   const [showOptions, setShowOptions] = useState(false)
-  const [voteByCouncil, setVoteByCouncil] = useState(false)
+  const { voteByCouncil, shouldShowVoteByCouncilToggle, setVoteByCouncil } = useVoteByCouncilToggle();
   const [isLoading, setIsLoading] = useState(false)
 
   const mSolTokenAccounts = governedTokenAccounts.filter(
@@ -75,6 +74,8 @@ const ConvertToMsol = () => {
   }
 
   const handlePropose = async () => {
+    if (currentAccount?.governance === undefined) throw new Error()
+
     setIsLoading(true)
     const instruction: UiInstruction = await getConvertToMsolInstruction({
       schema,
@@ -102,15 +103,10 @@ const ConvertToMsol = () => {
       }
 
       try {
-        // Fetch governance to get up to date proposalCount
-        const selectedGovernance = (await fetchRealmGovernance(
-          currentAccount?.governance?.pubkey
-        )) as ProgramAccount<Governance>
-
         const proposalAddress = await handleCreateProposal({
           title: form.title ? form.title : proposalTitle,
           description: form.description ? form.description : '',
-          governance: selectedGovernance,
+          governance: currentAccount?.governance,
           instructionsData: [instructionData],
           voteByCouncil,
           isDraft: false,
@@ -131,6 +127,7 @@ const ConvertToMsol = () => {
       value: currentAccount,
       propertyName: 'governedTokenAccount',
     })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- TODO please fix, it can cause difficult bugs. You might wanna check out https://bobbyhadz.com/blog/react-hooks-exhaustive-deps for info. -@asktree
   }, [currentAccount, form.destinationAccount])
 
   return (
@@ -227,13 +224,13 @@ const ConvertToMsol = () => {
                 })
               }
             ></Textarea>
-            {canChooseWhoVote && (
-              <VoteBySwitch
-                checked={voteByCouncil}
-                onChange={() => {
-                  setVoteByCouncil(!voteByCouncil)
-                }}
-              ></VoteBySwitch>
+            {shouldShowVoteByCouncilToggle && (
+                <VoteBySwitch
+                    checked={voteByCouncil}
+                    onChange={() => {
+                      setVoteByCouncil(!voteByCouncil)
+                    }}
+                ></VoteBySwitch>
             )}
           </>
         )}

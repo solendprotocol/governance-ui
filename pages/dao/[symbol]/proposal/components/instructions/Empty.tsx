@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useState } from 'react'
+import { useContext, useEffect, useState } from 'react'
 import * as yup from 'yup'
 import { Governance, ProgramAccount } from '@solana/spl-governance'
 import { validateInstruction } from '@utils/instructionTools'
@@ -8,8 +8,8 @@ import {
 } from '@utils/uiTypes/proposalCreationTypes'
 import { NewProposalContext } from '../../new'
 import GovernedAccountSelect from '../GovernedAccountSelect'
-import useRealm from '@hooks/useRealm'
 import useGovernanceAssets from '@hooks/useGovernanceAssets'
+import { useLegacyVoterWeight } from '@hooks/queries/governancePower'
 const Empty = ({
   index,
   governance,
@@ -20,9 +20,9 @@ const Empty = ({
   const [form, setForm] = useState<EmptyInstructionForm>({
     governedAccount: undefined,
   })
-  const { ownVoterWeight } = useRealm()
+  const { result: ownVoterWeight } = useLegacyVoterWeight()
   const { assetAccounts } = useGovernanceAssets()
-  const shouldBeGoverned = index !== 0 && governance
+  const shouldBeGoverned = !!(index !== 0 && governance)
   const [formErrors, setFormErrors] = useState({})
   const { handleSetInstructions } = useContext(NewProposalContext)
   const handleSetForm = ({ propertyName, value }) => {
@@ -44,6 +44,7 @@ const Empty = ({
       { governedAccount: form.governedAccount?.governance, getInstruction },
       index
     )
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- TODO please fix, it can cause difficult bugs. You might wanna check out https://bobbyhadz.com/blog/react-hooks-exhaustive-deps for info. -@asktree
   }, [form])
   const schema = yup.object().shape({
     governedAccount: yup
@@ -53,9 +54,9 @@ const Empty = ({
   })
   return (
     <GovernedAccountSelect
-      label="Governance"
+      label="Wallet"
       governedAccounts={assetAccounts.filter((x) =>
-        ownVoterWeight.canCreateProposal(x.governance.account.config)
+        ownVoterWeight?.canCreateProposal(x.governance.account.config)
       )}
       onChange={(value) => {
         handleSetForm({ value, propertyName: 'governedAccount' })

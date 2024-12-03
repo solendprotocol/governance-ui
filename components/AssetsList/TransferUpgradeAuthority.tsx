@@ -5,9 +5,8 @@ import Input from 'components/inputs/Input'
 import Button, { LinkButton } from '@components/Button'
 import Textarea from 'components/inputs/Textarea'
 import VoteBySwitch from 'pages/dao/[symbol]/proposal/components/VoteBySwitch'
-import useWalletStore from 'stores/useWalletStore'
 import { getValidatedPublickKey } from 'utils/validations'
-import { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { UiInstruction } from 'utils/uiTypes/proposalCreationTypes'
 import { serializeInstructionToBase64 } from '@solana/spl-governance'
 import { useRouter } from 'next/router'
@@ -19,9 +18,10 @@ import useCreateProposal from '@hooks/useCreateProposal'
 import { InstructionDataWithHoldUpTime } from 'actions/createProposal'
 import { createSetUpgradeAuthority } from '@tools/sdk/bpfUpgradeableLoader/createSetUpgradeAuthority'
 import { abbreviateAddress } from '@utils/formatting'
-import useGovernanceAssets from '@hooks/useGovernanceAssets'
-import { Governance, ProgramAccount } from '@solana/spl-governance'
 import { AssetAccount } from '@utils/uiTypes/assets'
+import useWalletOnePointOh from '@hooks/useWalletOnePointOh'
+import { useRealmQuery } from '@hooks/queries/realm'
+import {useVoteByCouncilToggle} from "@hooks/useVoteByCouncilToggle";
 
 interface CloseBuffersForm {
   governedAccount: AssetAccount | undefined
@@ -31,25 +31,18 @@ interface CloseBuffersForm {
   title: string
 }
 
-const TransferUpgradeAuthority = ({
-  program,
-}: {
-  program: ProgramAccount<Governance>
-}) => {
+const TransferUpgradeAuthority = ({ program }: { program: AssetAccount }) => {
   const { handleCreateProposal } = useCreateProposal()
-  const { assetAccounts } = useGovernanceAssets()
   const router = useRouter()
-  const wallet = useWalletStore((s) => s.current)
-  const governedAccount = assetAccounts.find(
-    (x) => x.governance.pubkey.toBase58() === program.pubkey.toBase58()
-  )
+  const wallet = useWalletOnePointOh()
   const { fmtUrlWithCluster } = useQueryContext()
   const { symbol } = router.query
-  const { realmInfo, canChooseWhoVote, realm } = useRealm()
+  const realm = useRealmQuery().data?.result
+  const { realmInfo} = useRealm()
   const programId: PublicKey | undefined = realmInfo?.programId
 
   const [form, setForm] = useState<CloseBuffersForm>({
-    governedAccount: governedAccount,
+    governedAccount: program,
     programId: programId?.toString(),
     newUpgradeAuthority: wallet?.publicKey?.toBase58()
       ? wallet?.publicKey?.toBase58()
@@ -57,15 +50,13 @@ const TransferUpgradeAuthority = ({
     description: '',
     title: '',
   })
-  const [voteByCouncil, setVoteByCouncil] = useState(false)
+  const { voteByCouncil, shouldShowVoteByCouncilToggle, setVoteByCouncil } = useVoteByCouncilToggle();
   const [showOptions, setShowOptions] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [formErrors, setFormErrors] = useState({})
   const proposalTitle = `Transfer upgrade authority for program ${
-    form.governedAccount?.governance?.account.governedAccount
-      ? abbreviateAddress(
-          form.governedAccount?.governance?.account.governedAccount
-        )
+    form.governedAccount?.pubkey
+      ? abbreviateAddress(form.governedAccount?.pubkey)
       : ''
   }`
 
@@ -108,8 +99,8 @@ const TransferUpgradeAuthority = ({
       wallet?.publicKey
     ) {
       const transferUpgradeAuthIx = await createSetUpgradeAuthority(
-        form.governedAccount.governance.account.governedAccount,
-        form.governedAccount.governance.pubkey,
+        form.governedAccount.pubkey,
+        form.governedAccount.extensions.program!.authority,
         new PublicKey(form.newUpgradeAuthority)
       )
       serializedInstruction = serializeInstructionToBase64(
@@ -165,6 +156,7 @@ const TransferUpgradeAuthority = ({
       propertyName: 'programId',
       value: programId?.toString(),
     })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- TODO please fix, it can cause difficult bugs. You might wanna check out https://bobbyhadz.com/blog/react-hooks-exhaustive-deps for info. -@asktree
   }, [realmInfo?.programId])
 
   return (
@@ -228,13 +220,13 @@ const TransferUpgradeAuthority = ({
                 })
               }
             />
-            {canChooseWhoVote && (
-              <VoteBySwitch
-                checked={voteByCouncil}
-                onChange={() => {
-                  setVoteByCouncil(!voteByCouncil)
-                }}
-              />
+            {shouldShowVoteByCouncilToggle && (
+                <VoteBySwitch
+                    checked={voteByCouncil}
+                    onChange={() => {
+                      setVoteByCouncil(!voteByCouncil)
+                    }}
+                ></VoteBySwitch>
             )}
           </>
         )}

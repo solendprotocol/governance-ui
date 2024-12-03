@@ -1,9 +1,7 @@
 import { notify } from './notifications'
 import {
-  Commitment,
   Connection,
   Keypair,
-  RpcResponseAndContext,
   SimulatedTransactionResponse,
   Transaction,
   TransactionSignature,
@@ -11,6 +9,9 @@ import {
 import Wallet from '@project-serum/sol-wallet-adapter'
 import { sleep } from '@project-serum/common'
 import { WalletSigner } from '@solana/spl-governance'
+import { invalidateInstructionAccounts } from '@hooks/queries/queryClient'
+import { createComputeBudgetIx } from '@blockworks-foundation/mango-v4'
+import { getFeeEstimate } from '@tools/feeEstimate'
 
 class TransactionError extends Error {
   public txid: string
@@ -20,12 +21,13 @@ class TransactionError extends Error {
   }
 }
 
-export function getUnixTs() {
+function getUnixTs() {
   return new Date().getTime() / 1000
 }
 
 const DEFAULT_TIMEOUT = 31000
 
+/** @deprecated use sendTransactionsV3 */
 export async function sendTransaction({
   transaction,
   wallet,
@@ -69,9 +71,12 @@ export async function signTransaction({
   signers?: Array<Keypair>
   connection: Connection
 }) {
-  transaction.recentBlockhash = (
-    await connection.getLatestBlockhash('max')
-  ).blockhash
+  const [{ blockhash: recentBlockhash }, fee] = await Promise.all([
+    connection.getLatestBlockhash('max'),
+    getFeeEstimate(connection),
+  ])
+  transaction.add(createComputeBudgetIx(fee))
+  transaction.recentBlockhash = recentBlockhash
   transaction.setSigners(wallet!.publicKey!, ...signers.map((s) => s.publicKey))
   if (signers.length > 0) {
     transaction.partialSign(...signers)
@@ -91,9 +96,14 @@ export async function signTransactions({
   wallet: Wallet
   connection: Connection
 }) {
-  const blockhash = (await connection.getLatestBlockhash('max')).blockhash
+  const [{ blockhash: recentBlockhash }, fee] = await Promise.all([
+    connection.getLatestBlockhash('max'),
+    getFeeEstimate(connection),
+  ])
+
   transactionsAndSigners.forEach(({ transaction, signers = [] }) => {
-    transaction.recentBlockhash = blockhash
+    transaction.add(createComputeBudgetIx(fee))
+    transaction.recentBlockhash = recentBlockhash
     transaction.setSigners(
       wallet!.publicKey!,
       ...signers.map((s) => s.publicKey)
@@ -179,9 +189,8 @@ export async function sendSignedTransaction({
     // Simulate failed transaction to parse out an error reason
     try {
       console.log('start simulate')
-      simulateResult = (
-        await simulateTransaction(connection, signedTransaction, 'single')
-      ).value
+      simulateResult = (await connection.simulateTransaction(signedTransaction))
+        .value
     } catch (error) {
       console.log('Error simulating: ', error)
     }
@@ -215,7 +224,7 @@ export async function sendSignedTransaction({
   }
 
   notify({ message: successMessage, type: 'success', txid })
-
+  signedTransaction.instructions.forEach(invalidateInstructionAccounts)
   console.log('Latency', txid, getUnixTs() - startTime)
   return txid
 }
@@ -293,9 +302,8 @@ export async function sendSignedAndAdjacentTransactions({
     // Simulate failed transaction to parse out an error reason
     try {
       console.log('start simulate')
-      simulateResult = (
-        await simulateTransaction(connection, signedTransaction, 'single')
-      ).value
+      simulateResult = (await connection.simulateTransaction(signedTransaction))
+        .value
     } catch (error) {
       console.log('Error simulating: ', error)
     }
@@ -422,38 +430,4 @@ async function awaitTransactionSignatureConfirmation(
   })
   done = true
   return result
-}
-
-/** Copy of Connection.simulateTransaction that takes a commitment parameter. */
-export async function simulateTransaction(
-  connection: Connection,
-  transaction: Transaction,
-  commitment: Commitment
-): Promise<RpcResponseAndContext<SimulatedTransactionResponse>> {
-  // @ts-ignore
-  transaction.recentBlockhash = await connection._recentBlockhash(
-    // @ts-ignore
-    connection._disableBlockhashCaching
-  )
-
-  console.log('simulating transaction', transaction)
-
-  const signData = transaction.serializeMessage()
-  // @ts-ignore
-  const wireTransaction = transaction._serialize(signData)
-  const encodedTransaction = wireTransaction.toString('base64')
-
-  console.log('encoding')
-  const config: any = { encoding: 'base64', commitment }
-  const args = [encodedTransaction, config]
-  console.log('simulating data', args)
-
-  // @ts-ignore
-  const res = await connection._rpcRequest('simulateTransaction', args)
-
-  console.log('res simulating transaction', res)
-  if (res.error) {
-    throw new Error('failed to simulate transaction: ' + res.error.message)
-  }
-  return res.result
 }

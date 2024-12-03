@@ -1,19 +1,28 @@
 import type { BigNumber } from 'bignumber.js'
-import type { MintMaxVoteWeightSource } from '@solana/spl-governance'
+import type {
+  GoverningTokenConfig,
+  MintMaxVoteWeightSource,
+} from '@solana/spl-governance'
 
-import type { AssetAccount } from '@utils/uiTypes/assets'
+import type { AssetAccount, StakeState } from '@utils/uiTypes/assets'
 
-import { NFT } from './NFT'
 import { Program } from './Program'
+import { Domain } from './Domain'
+
+import { PublicKey } from '@solana/web3.js'
 
 export enum AssetType {
   Mint,
-  NFTCollection,
+  //  NFTCollection,
+  Domain,
   Programs,
   RealmAuthority,
   Sol,
   Token,
   Unknown,
+  TokenOwnerRecordAsset,
+  Stake,
+  Mango,
 }
 
 export interface Mint {
@@ -23,19 +32,8 @@ export interface Mint {
   name: string
   raw: AssetAccount
   symbol: string
-  tokenType?: 'council' | 'community'
+  tokenRole?: 'council' | 'community'
   totalSupply?: BigNumber
-}
-
-export interface NFTCollection {
-  type: AssetType.NFTCollection
-  address?: string
-  id: string
-  count: BigNumber
-  icon: JSX.Element
-  list: NFT[]
-  name: string
-  totalCount?: BigNumber
 }
 
 export interface Programs {
@@ -52,8 +50,8 @@ export interface RealmAuthority {
   config: {
     communityMintMaxVoteWeightSource?: MintMaxVoteWeightSource
     minCommunityTokensToCreateGovernance: BigNumber
-    useCommunityVoterWeightAddin?: boolean
-    useMaxCommunityVoterWeightAddin?: boolean
+    communityTokenConfig?: GoverningTokenConfig
+    councilTokenConfig?: GoverningTokenConfig
   }
   icon: JSX.Element
   name: string
@@ -85,6 +83,22 @@ export interface Token {
   value: BigNumber
 }
 
+export interface Stake {
+  type: AssetType.Stake
+  pubkey: PublicKey
+  amount: number
+  id: string
+  state: StakeState
+  raw: AssetAccount
+  value: BigNumber
+}
+
+export interface Mango {
+  id: string
+  type: AssetType.Mango
+  value: BigNumber
+}
+
 export interface Unknown {
   type: AssetType.Unknown
   address: string
@@ -94,11 +108,21 @@ export interface Unknown {
   name: string
 }
 
+export interface Domains {
+  type: AssetType.Domain
+  id: string
+  count: BigNumber
+  list: Domain[]
+}
+
 export type Asset =
   | Mint
-  | NFTCollection
+  //| NFTCollection
+  | Domains
   | Programs
   | RealmAuthority
   | Sol
   | Token
   | Unknown
+  | Stake
+  | Mango

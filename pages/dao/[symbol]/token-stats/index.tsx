@@ -1,11 +1,10 @@
-import { Config, MangoClient } from '@blockworks-foundation/mango-client'
 import Input from '@components/inputs/Input'
 import { GrantInstruction } from '@components/instructions/programs/voteStakeRegistry'
 import { MANGO_DAO_TREASURY } from '@components/instructions/tools'
 import PreviousRouteBtn from '@components/PreviousRouteBtn'
-import { SearchIcon, UserCircleIcon } from '@heroicons/react/outline'
+import { SearchIcon } from '@heroicons/react/outline'
 import useRealm from '@hooks/useRealm'
-import { BN, BorshInstructionCoder } from '@project-serum/anchor'
+import { BN, BorshInstructionCoder } from '@coral-xyz/anchor'
 import {
   GovernanceAccountType,
   InstructionExecutionStatus,
@@ -14,23 +13,16 @@ import { PublicKey } from '@solana/web3.js'
 import { getMintDecimalAmount } from '@tools/sdk/units'
 import dayjs from 'dayjs'
 import dynamic from 'next/dynamic'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import useGovernanceAssetsStore from 'stores/useGovernanceAssetsStore'
-import useVotePluginsClientStore from 'stores/useVotePluginsClientStore'
-import useWalletStore from 'stores/useWalletStore'
 import {
   DAYS_PER_MONTH,
-  SECS_PER_MONTH,
-} from 'VoteStakeRegistry/tools/dateTools'
-import InfoBox from 'VoteStakeRegistry/components/LockTokenStats/InfoBox'
-import { AddressImage, DisplayAddress } from '@cardinal/namespaces-components'
-import { LockupType } from 'VoteStakeRegistry/sdk/accounts'
-import {
   getMinDurationFmt,
   getTimeLeftFromNowFmt,
-} from 'VoteStakeRegistry/tools/dateTools'
+} from '@utils/dateTools'
+import InfoBox from 'VoteStakeRegistry/components/LockTokenStats/InfoBox'
+import { LockupType, Registrar } from 'VoteStakeRegistry/sdk/accounts'
 import {
-  DepoistWithVoter,
   DepositWithWallet,
   getProposalsTransactions,
 } from 'VoteStakeRegistry/components/LockTokenStats/tools'
@@ -45,6 +37,17 @@ import {
 } from '@components/TableElements'
 import { tryParsePublicKey } from '@tools/core/pubkey'
 import { abbreviateAddress } from '@utils/formatting'
+import { getDepositType } from 'VoteStakeRegistry/tools/deposits'
+import { useRealmQuery } from '@hooks/queries/realm'
+import { useRouter } from 'next/router'
+import { useRealmCommunityMintInfoQuery } from '@hooks/queries/mintInfo'
+import useLegacyConnectionContext from '@hooks/useLegacyConnectionContext'
+import { useRealmProposalsQuery } from '@hooks/queries/proposal'
+import { useQuery } from '@tanstack/react-query'
+import { IDL } from 'VoteStakeRegistry/sdk/voter_stake_registry'
+import { ProfileImage, ProfileName } from '@components/Profile'
+import {useVsrClient} from "../../../../VoterWeightPlugins/useVsrClient";
+
 const VestingVsTime = dynamic(
   () => import('VoteStakeRegistry/components/LockTokenStats/VestingVsTime'),
   {
@@ -54,161 +57,48 @@ const VestingVsTime = dynamic(
 const isBetween = require('dayjs/plugin/isBetween')
 dayjs.extend(isBetween)
 
-const LockTokenStats = () => {
-  const walletsPerPage = 10
-  const pagination = useRef<{ setPage: (val) => void }>(null)
-  const { realmInfo, realm, symbol, mint, proposals } = useRealm()
-  const vsrClient = useVotePluginsClientStore((s) => s.state.vsrClient)
-  const voteStakeRegistryRegistrarPk = useVotePluginsClientStore(
-    (s) => s.state.voteStakeRegistryRegistrarPk
-  )
-  const voteStakeRegistryRegistrar = useVotePluginsClientStore(
-    (s) => s.state.voteStakeRegistryRegistrar
-  )
-  const connection = useWalletStore((s) => s.connection)
-  const governedTokenAccounts = useGovernanceAssetsStore(
-    (s) => s.governedTokenAccounts
-  )
-  const [search, setSearch] = useState('')
-  const [voters, setVoters] = useState<
-    {
-      publicKey: PublicKey
-      account: any
-    }[]
-  >([])
-  const [depositsWithWallets, setDepositsWithWallets] = useState<
-    DepositWithWallet[]
-  >([])
-  const [givenGrantsTokenAmounts, setGivenGrantsTokenAmounts] = useState<
-    DepoistWithVoter[]
-  >([])
-  const [unlockedFromGrants, setUnlockedFromGrants] = useState(new BN(0))
-  const [
-    liquidityMiningEmissionPerMonth,
-    setLiqudiityMiningEmissionPerMonth,
-  ] = useState(new BN(0))
-  const [vestPerMonthStats, setVestPerMonthStats] = useState<{
-    [key: string]: { vestingDate: dayjs.Dayjs; vestingAmount: BN }[]
-  }>({})
-  const [statsMonths, setStatsMonths] = useState<string[]>([])
-  const [paginatedWallets, setPaginatedWallets] = useState<DepositWithWallet[]>(
-    []
-  )
-  const filteredDepositWithWallets = depositsWithWallets.filter((x) =>
-    search ? x.wallet.toBase58().includes(search) : x
-  )
-  const givenGrantsTokenAmount = givenGrantsTokenAmounts.reduce(
-    (acc, curr) => acc.add(curr.amount!),
-    new BN(0)
-  )
-  const possibleGrantProposals = Object.values(proposals).filter(
-    (x) =>
-      x.account.governance.toBase58() === MANGO_DAO_TREASURY &&
-      x.account.accountType === GovernanceAccountType.ProposalV2
-  )
-  const currentMonthName = statsMonths.length ? statsMonths[0] : ''
-  const vestingThisMonth =
-    currentMonthName && vestPerMonthStats[currentMonthName]
-      ? vestPerMonthStats[currentMonthName].reduce(
-          (acc, val) => acc.add(val.vestingAmount),
-          new BN(0)
-        )
-      : new BN(0)
-  const walletsCount = [
-    ...new Set(depositsWithWallets.map((x) => x.wallet.toBase58())),
-  ].length
-  const mngoValut = governedTokenAccounts.find(
-    (x) =>
-      x.extensions.mint?.publicKey.toBase58() ===
-      realm?.account.communityMint.toBase58()
-  )
-  const mngoLocked = depositsWithWallets.reduce(
-    (acc, curr) => acc.add(curr.deposit.amountDepositedNative),
-    new BN(0)
-  )
-  const circulatingSupply =
-    mngoValut && mint
-      ? mint.supply.sub(mngoValut.extensions.amount!).sub(mngoLocked)
-      : new BN(0)
-  const mngoLockedWithClawback = depositsWithWallets
-    .filter((x) => x.deposit.allowClawback)
-    .reduce(
-      (acc, curr) => acc.add(curr.deposit.amountDepositedNative),
-      new BN(0)
-    )
-  const calcVestingAmountsPerLastXMonths = (monthsNumber: number) => {
-    const depositsWithWalletsSortedByDate = [...depositsWithWallets].sort(
-      (x, y) =>
-        x.deposit.lockup.startTs.toNumber() * 1000 -
-        y.deposit.lockup.startTs.toNumber() * 1000
-    )
-    const months: dayjs.Dayjs[] = []
-    const vestingPerMonth = {}
-    const currentDate = dayjs()
-    const oldestDate = dayjs().subtract(monthsNumber, 'month')
-    for (let i = 0; i < monthsNumber; i++) {
-      const date = dayjs().subtract(i, 'month')
-      months.push(date)
-      vestingPerMonth[date.format('MMM')] = []
-    }
-    for (const depositWithWallet of depositsWithWalletsSortedByDate) {
-      const unixLockupStart =
-        depositWithWallet.deposit.lockup.startTs.toNumber() * 1000
-      const unixLockupEnd =
-        depositWithWallet.deposit.lockup.endTs.toNumber() * 1000
-      const isPossibleToVest =
-        typeof depositWithWallet.deposit.lockup.kind.monthly !== 'undefined' &&
-        currentDate.isAfter(unixLockupStart) &&
-        oldestDate.isBefore(unixLockupEnd)
+const mainMangoVaultPk = 'Guiwem4qBivtkSFrxZAEfuthBz6YuWyCwS4G3fjBYu5Z'
 
-      if (isPossibleToVest) {
-        const vestingCount = Math.ceil(
-          dayjs(unixLockupEnd).diff(unixLockupStart, 'month', true)
-        )
-        const vestingAmount = depositWithWallet.deposit.amountInitiallyLockedNative.divn(
-          vestingCount
-        )
-        for (let i = 1; i <= vestingCount; i++) {
-          const nextVestinDays = i * DAYS_PER_MONTH
-          const vestingDate = dayjs(unixLockupStart).add(nextVestinDays, 'day')
-          for (const date of months) {
-            if (
-              //@ts-ignore
-              vestingDate.isBetween(date.startOf('month'), date.endOf('month'))
-            ) {
-              vestingPerMonth[date.format('MMM')] = [
-                ...vestingPerMonth[date.format('MMM')],
-                {
-                  vestingDate,
-                  vestingAmount,
-                },
-              ]
-            }
-          }
-        }
-      }
-    }
-    return { vestingPerMonth, months }
-  }
-  const fmtAmount = (val) => {
-    const formatter = Intl.NumberFormat('en', {
-      notation: 'compact',
-    })
-    return mint
-      ? formatter.format(getMintDecimalAmount(mint!, val).toNumber())
-      : '0'
-  }
+const useGivenGrantsTokenAmounts = () => {
+  const realm = useRealmQuery().data?.result
+  const { data: proposals } = useRealmProposalsQuery()
+  const { realmInfo } = useRealm()
+  const connection = useLegacyConnectionContext()
 
-  useEffect(() => {
-    const getProposalsInstructions = async () => {
-      const accounts = await getProposalsTransactions(
-        possibleGrantProposals.map((x) => x.pubkey),
+  const possibleGrantProposals = useMemo(
+    () =>
+      proposals?.filter(
+        (x) =>
+          x.account.governance.toBase58() === MANGO_DAO_TREASURY &&
+          x.account.accountType === GovernanceAccountType.ProposalV2
+      ),
+    [proposals]
+  )
+
+  const enabled =
+    realmInfo?.programId !== undefined && possibleGrantProposals !== undefined
+  const { data: proposalTxs } = useQuery({
+    enabled,
+    queryKey: [
+      connection.current.rpcEndpoint,
+      realmInfo?.programId,
+      'fetch proposals transactions',
+      possibleGrantProposals,
+    ],
+    queryFn: () => {
+      if (!enabled) throw new Error('query ran while disabled :o')
+      return getProposalsTransactions(
+        possibleGrantProposals.map((x) => x.pubkey) ?? [],
         connection,
-        realmInfo!.programId
+        realmInfo.programId
       )
+    },
+  })
 
-      const givenGrantsTokenAmounts = accounts
-        .filter(
+  const givenGrantsTokenAmounts = useMemo(
+    () =>
+      proposalTxs
+        ?.filter(
           (x) =>
             x.account.executionStatus === InstructionExecutionStatus.Success
         )
@@ -221,24 +111,55 @@ const LockTokenStats = () => {
                   realm?.account.communityMint.toBase58()
             )
             .map((instruction) => {
-              const data = new BorshInstructionCoder(
-                vsrClient!.program.idl
-              ).decode(Buffer.from(instruction.data))
-                ?.data as GrantInstruction | null
+              const data = new BorshInstructionCoder(IDL).decode(
+                Buffer.from(instruction.data)
+              )?.data as GrantInstruction | null
               return {
                 voterPk: instruction.accounts[1].pubkey,
                 amount: data?.amount,
                 startTs: data?.startTs,
               }
             })
-        )
-      setGivenGrantsTokenAmounts(givenGrantsTokenAmounts)
-    }
-    if (realmInfo?.programId && vsrClient) {
-      getProposalsInstructions()
-    }
-  }, [possibleGrantProposals.length, realmInfo?.programId])
-  useEffect(() => {
+        ),
+    [proposalTxs, realm?.account.communityMint]
+  )
+
+  return givenGrantsTokenAmounts
+}
+
+const LockTokenStats = () => {
+  const walletsPerPage = 10
+  const pagination = useRef<{ setPage: (val) => void }>(null)
+  const realm = useRealmQuery().data?.result
+  const mint = useRealmCommunityMintInfoQuery().data?.result
+  const { symbol } = useRouter().query
+  const { realmInfo } = useRealm()
+  const { vsrClient, plugin } = useVsrClient();
+  const voteStakeRegistryRegistrar = plugin?.params as Registrar | undefined;
+  const voteStakeRegistryRegistrarPk = plugin?.registrarPublicKey;
+
+  const governedTokenAccounts = useGovernanceAssetsStore(
+    (s) => s.governedTokenAccounts
+  )
+  const [search, setSearch] = useState('')
+  const [voters, setVoters] = useState<
+    {
+      publicKey: PublicKey
+      account: any
+    }[]
+  >([])
+
+  const [unlockedFromGrants, setUnlockedFromGrants] = useState(new BN(0))
+  const [liquidityMiningEmissionPerMonth] = useState(new BN(0))
+
+  const [statsMonths, setStatsMonths] = useState<string[]>([])
+  const [paginatedWallets, setPaginatedWallets] = useState<DepositWithWallet[]>(
+    []
+  )
+
+  const givenGrantsTokenAmounts = useGivenGrantsTokenAmounts()
+
+  const depositsWithWallets = useMemo(() => {
     const depositsWithWalletsInner: DepositWithWallet[] = []
     for (const voter of voters) {
       const deposits = voter.account.deposits.filter(
@@ -261,13 +182,182 @@ const LockTokenStats = () => {
         depositsWithWalletsInner.push(depositWithWallet)
       }
     }
-    const depositWithWalletSorted = depositsWithWalletsInner.sort(
-      (a, b) =>
-        b.deposit.amountDepositedNative.toNumber() -
-        a.deposit.amountDepositedNative.toNumber()
+    return depositsWithWalletsInner.sort((a, b) =>
+      a.deposit.amountDepositedNative.eq(b.deposit.amountDepositedNative)
+        ? 0
+        : a.deposit.amountDepositedNative.lt(b.deposit.amountDepositedNative)
+        ? 1
+        : -1
     )
-    setDepositsWithWallets(depositWithWalletSorted)
-  }, [voters.length])
+  }, [
+    realm?.account.communityMint,
+    voteStakeRegistryRegistrar?.votingMints,
+    voters,
+  ])
+
+  const filteredDepositWithWallets = depositsWithWallets.filter((x) =>
+    search ? x.wallet.toBase58().includes(search) : x
+  )
+
+  const givenGrantsTokenAmount = givenGrantsTokenAmounts?.reduce(
+    (acc, curr) => acc.add(curr.amount!),
+    new BN(0)
+  )
+  const calcVestingAmountsPerLastXMonths = useCallback(
+    (monthsNumber: number) => {
+      const depositsWithWalletsSortedByDate = [...depositsWithWallets].sort(
+        (x, y) =>
+          x.deposit.lockup.startTs.toNumber() * 1000 -
+          y.deposit.lockup.startTs.toNumber() * 1000
+      )
+
+      const months: dayjs.Dayjs[] = []
+      const vestingPerMonth: {
+        [key: string]: { vestingDate: dayjs.Dayjs; vestingAmount: BN }[]
+      } = {}
+      const currentDate = dayjs()
+      // Make sure we capture the full monthly vesting amount for the last month
+      const oldestDate = dayjs().add(monthsNumber, 'month').endOf('month')
+
+      for (let i = 0; i < monthsNumber; i++) {
+        // add months so we get the current month onward
+        const date = dayjs().add(i, 'month')
+        months.push(date)
+        vestingPerMonth[date.format('MMM')] = []
+      }
+
+      for (const depositWithWallet of depositsWithWalletsSortedByDate) {
+        const unixLockupStart =
+          depositWithWallet.deposit.lockup.startTs.toNumber() * 1000
+        const unixLockupEnd =
+          depositWithWallet.deposit.lockup.endTs.toNumber() * 1000
+        const depositType = getDepositType(depositWithWallet.deposit)
+
+        const finalUnlockDate = dayjs(unixLockupEnd)
+        const vestingStart = dayjs(unixLockupStart)
+
+        const monthlyPossibleVest =
+          depositType == 'monthly' &&
+          finalUnlockDate.isAfter(currentDate) &&
+          vestingStart.isBefore(oldestDate)
+
+        const cliffPossibleVest =
+          depositType == 'cliff' &&
+          finalUnlockDate.isAfter(currentDate) &&
+          finalUnlockDate.isBefore(oldestDate)
+        const isPossibleToVest = monthlyPossibleVest || cliffPossibleVest
+
+        if (isPossibleToVest) {
+          let vestingAmount = new BN(0)
+          if (depositType === 'monthly') {
+            const vestingCount = Math.ceil(
+              dayjs(unixLockupEnd).diff(unixLockupStart, 'month', true)
+            )
+            vestingAmount = depositWithWallet.deposit.amountInitiallyLockedNative.divn(
+              vestingCount
+            )
+            // Monthly vesting needs to be calculated over time
+            for (let i = 1; i <= vestingCount; i++) {
+              const nextVestinDays = i * DAYS_PER_MONTH
+              const vestingDate = dayjs(unixLockupStart).add(
+                nextVestinDays,
+                'day'
+              )
+              for (const date of months) {
+                if (
+                  //@ts-ignore
+                  vestingDate.isBetween(
+                    date.startOf('month'),
+                    date.endOf('month')
+                  )
+                ) {
+                  vestingPerMonth[date.format('MMM')] = [
+                    ...vestingPerMonth[date.format('MMM')],
+                    {
+                      vestingDate,
+                      vestingAmount,
+                    },
+                  ]
+                }
+              }
+            }
+          } else if (depositType === 'cliff') {
+            vestingAmount =
+              depositWithWallet.deposit.amountInitiallyLockedNative
+            // Find the month the cliff period ends in and bucket it
+            for (const date of months) {
+              if (
+                // @ts-ignore
+                finalUnlockDate.isBetween(
+                  date.startOf('month'),
+                  date.endOf('month')
+                )
+              ) {
+                vestingPerMonth[date.format('MMM')] = [
+                  ...vestingPerMonth[date.format('MMM')],
+                  {
+                    // @ts-expect-error who knows
+                    finalUnlockDate,
+                    vestingAmount,
+                  },
+                ]
+              }
+            }
+          }
+        }
+      }
+      return { vestingPerMonth, months }
+    },
+    [depositsWithWallets]
+  )
+
+  const vestPerMonthStats = useMemo(
+    () => calcVestingAmountsPerLastXMonths(6).vestingPerMonth,
+    [calcVestingAmountsPerLastXMonths]
+  )
+
+  const currentMonthName = statsMonths.length ? statsMonths[0] : ''
+  const vestingThisMonth =
+    currentMonthName && vestPerMonthStats[currentMonthName]
+      ? vestPerMonthStats[currentMonthName].reduce(
+          (acc, val) => acc.add(val.vestingAmount),
+          new BN(0)
+        )
+      : undefined
+
+  const walletsCount = [
+    ...new Set(depositsWithWallets.map((x) => x.wallet.toBase58())),
+  ].length
+  const mngoValut = governedTokenAccounts.find(
+    (x) =>
+      x.extensions.mint?.publicKey.toBase58() ===
+        realm?.account.communityMint.toBase58() &&
+      x.extensions.transferAddress?.toBase58() === mainMangoVaultPk
+  )
+  const mngoLocked = depositsWithWallets.reduce(
+    (acc, curr) => acc.add(curr.deposit.amountDepositedNative),
+    new BN(0)
+  )
+
+  const circulatingSupply =
+    mngoValut && mint
+      ? mint.supply.sub(mngoValut.extensions.amount!).sub(mngoLocked)
+      : new BN(0)
+  const mngoLockedWithClawback = depositsWithWallets
+    .filter((x) => x.deposit.allowClawback)
+    .reduce(
+      (acc, curr) => acc.add(curr.deposit.amountDepositedNative),
+      new BN(0)
+    )
+
+  const fmtAmount = (val) => {
+    const formatter = Intl.NumberFormat('en', {
+      notation: 'compact',
+    })
+    return mint
+      ? formatter.format(getMintDecimalAmount(mint!, val).toNumber())
+      : '0'
+  }
 
   useEffect(() => {
     const getLockedDeposits = async () => {
@@ -285,18 +375,17 @@ const LockTokenStats = () => {
     if (vsrClient && voteStakeRegistryRegistrarPk) {
       getLockedDeposits()
     }
-  }, [
-    vsrClient?.program.programId.toBase58(),
-    voteStakeRegistryRegistrarPk?.toBase58(),
-  ])
+  }, [voteStakeRegistryRegistrarPk, vsrClient])
+
   useEffect(() => {
-    const { vestingPerMonth, months } = calcVestingAmountsPerLastXMonths(6)
+    const { months } = calcVestingAmountsPerLastXMonths(6)
     const monthsFormat = months.map((x) => x.format('MMM'))
-    setVestPerMonthStats(vestingPerMonth)
     setStatsMonths(monthsFormat)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- TODO please fix, it can cause difficult bugs. You might wanna check out https://bobbyhadz.com/blog/react-hooks-exhaustive-deps for info. -@asktree
   }, [depositsWithWallets.length])
+
   useEffect(() => {
-    if (depositsWithWallets.length && givenGrantsTokenAmounts.length) {
+    if (depositsWithWallets.length && givenGrantsTokenAmounts?.length) {
       const currentlyUnlocked = new BN(0)
       for (const depostiWithVoter of givenGrantsTokenAmounts) {
         const grantDeposit = depositsWithWallets.find((x) => {
@@ -320,44 +409,15 @@ const LockTokenStats = () => {
       }
       setUnlockedFromGrants(currentlyUnlocked)
     }
-  }, [depositsWithWallets.length, givenGrantsTokenAmounts.length])
-  useEffect(() => {
-    const mngoPerpMarket = async () => {
-      const GROUP = connection.cluster === 'devnet' ? 'devnet.2' : 'mainnet.1'
-      const groupConfig = Config.ids().getGroupWithName(GROUP)!
-      const client = new MangoClient(
-        connection.current,
-        groupConfig.mangoProgramId
-      )
-      const group = await client.getMangoGroup(groupConfig.publicKey)
-      const perpMarkets = await Promise.all([
-        ...groupConfig!.perpMarkets.map((x) =>
-          group.loadPerpMarket(
-            connection.current,
-            x.marketIndex,
-            x.baseDecimals,
-            x.quoteDecimals
-          )
-        ),
-      ])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- TODO please fix, it can cause difficult bugs. You might wanna check out https://bobbyhadz.com/blog/react-hooks-exhaustive-deps for info. -@asktree
+  }, [depositsWithWallets.length, givenGrantsTokenAmounts?.length])
 
-      const emissionPerMonth = perpMarkets
-        .reduce(
-          (acc, next) => acc.iadd(next.liquidityMiningInfo.mngoPerPeriod),
-          new BN(0)
-        )
-        .muln(SECS_PER_MONTH)
-        .div(perpMarkets[0].liquidityMiningInfo.targetPeriodLength)
-      setLiqudiityMiningEmissionPerMonth(emissionPerMonth)
-    }
-    if (symbol === 'MNGO') {
-      mngoPerpMarket()
-    }
-  }, [connection.cluster])
   useEffect(() => {
     setPaginatedWallets(paginateWallets(0))
     pagination?.current?.setPage(0)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- TODO please fix, it can cause difficult bugs. You might wanna check out https://bobbyhadz.com/blog/react-hooks-exhaustive-deps for info. -@asktree
   }, [JSON.stringify(filteredDepositWithWallets)])
+
   const onPageChange = (page) => {
     setPaginatedWallets(paginateWallets(page))
   }
@@ -373,9 +433,8 @@ const LockTokenStats = () => {
       : symbol
   const renderAddressName = (wallet) => {
     return (
-      <DisplayAddress
-        connection={connection.current}
-        address={new PublicKey(wallet)}
+      <ProfileName
+        publicKey={new PublicKey(wallet)}
         height="25px"
         width="100px"
         dark={true}
@@ -383,13 +442,10 @@ const LockTokenStats = () => {
     )
   }
   const renderAddressImage = (wallet) => (
-    <AddressImage
-      dark={true}
-      connection={connection.current}
-      address={new PublicKey(wallet)}
-      height="25px"
-      width="25px"
-      placeholder={<UserCircleIcon className="h-6 text-fgd-3 w-6" />}
+    <ProfileImage
+      publicKey={new PublicKey(wallet)}
+      expanded={false}
+      className="h-6 text-fgd-3 w-6"
     />
   )
 
@@ -484,10 +540,10 @@ const LockTokenStats = () => {
                         .reduce((acc, curr) => {
                           return acc.add(curr.vestingAmount)
                         }, new BN(0))
-                        .toNumber(),
+                        .toString(),
                     }
                   }),
-                ].reverse()}
+                ]}
                 fmtAmount={fmtAmount}
               ></VestingVsTime>
             </div>
@@ -555,8 +611,11 @@ const LockTokenStats = () => {
                       </Td>
                       <Td>
                         {isConstant
-                          ? getMinDurationFmt(x.deposit as any)
-                          : getTimeLeftFromNowFmt(x.deposit as any)}
+                          ? getMinDurationFmt(
+                              x.deposit.lockup.startTs,
+                              x.deposit.lockup.endTs
+                            )
+                          : getTimeLeftFromNowFmt(x.deposit.lockup.endTs)}
                       </Td>
                       <Td>{lockedTokens}</Td>
                     </TrBody>
@@ -608,8 +667,11 @@ const LockTokenStats = () => {
                         </div>
                         <div className="text-fgd-2 text-sm">
                           {isConstant
-                            ? getMinDurationFmt(x.deposit as any)
-                            : getTimeLeftFromNowFmt(x.deposit as any)}
+                            ? getMinDurationFmt(
+                                x.deposit.lockup.startTs,
+                                x.deposit.lockup.endTs
+                              )
+                            : getTimeLeftFromNowFmt(x.deposit.lockup.endTs)}
                         </div>
                       </div>
                     </div>

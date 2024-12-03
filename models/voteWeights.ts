@@ -4,6 +4,7 @@ import BigNumber from 'bignumber.js'
 import {
   GovernanceConfig,
   MintMaxVoteWeightSource,
+  MintMaxVoteWeightSourceType,
   Proposal,
   Realm,
   TokenOwnerRecord,
@@ -33,6 +34,9 @@ interface VoterWeightInterface {
 }
 
 /// VoterWeight encapsulates logic to determine voter weights from token records (community or council)
+/**
+ * @deprecated instead of using this, ask yourself what you are trying to do, and observe that there is no reason you'd need to use this class in order to do it.
+ */
 export class VoteRegistryVoterWeight implements VoterWeightInterface {
   //TODO implement council
   communityTokenRecord: ProgramAccount<TokenOwnerRecord> | undefined
@@ -74,6 +78,7 @@ export class VoteRegistryVoterWeight implements VoterWeightInterface {
       this.communityTokenRecord && this.votingPower.cmp(minCommunityWeight) >= 0
     )
   }
+
   hasMinCouncilWeight(minCouncilWeight: BN) {
     return (
       this.councilTokenRecord &&
@@ -89,6 +94,7 @@ export class VoteRegistryVoterWeight implements VoterWeightInterface {
       this.hasMinCouncilWeight(config.minCouncilTokensToCreateProposal)
     )
   }
+
   canCreateGovernanceUsingCommunityTokens(realm: ProgramAccount<Realm>) {
     return this.hasMinCommunityWeight(
       realm.account.config.minCommunityTokensToCreateGovernance
@@ -134,86 +140,9 @@ export class VoteRegistryVoterWeight implements VoterWeightInterface {
   }
 }
 
-/// VoterWeight encapsulates logic to determine voter weights from token records (community or council)
-export class PythVoterWeight implements VoterWeightInterface {
-  //TODO implement council
-  communityTokenRecord: ProgramAccount<TokenOwnerRecord> | undefined
-  councilTokenRecord: ProgramAccount<TokenOwnerRecord> | undefined
-  votingPower: BN
-
-  constructor(
-    communityTokenRecord: ProgramAccount<TokenOwnerRecord> | undefined,
-    votingPower: BN
-  ) {
-    this.communityTokenRecord = communityTokenRecord
-    this.councilTokenRecord = undefined
-    this.votingPower = votingPower
-  }
-
-  // Checks if the voter has any voting weight
-  hasAnyWeight() {
-    return !this.votingPower.isZero()
-  }
-
-  // Returns first available tokenRecord
-  getTokenRecord() {
-    if (this.communityTokenRecord) {
-      return this.communityTokenRecord.pubkey
-    }
-
-    throw new Error('Current wallet has no Token Owner Records')
-  }
-
-  hasMinCommunityWeight(minCommunityWeight: BN) {
-    return (
-      this.communityTokenRecord && this.votingPower.cmp(minCommunityWeight) >= 0
-    )
-  }
-  hasMinCouncilWeight() {
-    return false
-  }
-
-  canCreateProposal(config: GovernanceConfig) {
-    return this.hasMinCommunityWeight(config.minCommunityTokensToCreateProposal)
-  }
-  canCreateGovernanceUsingCommunityTokens(realm: ProgramAccount<Realm>) {
-    return this.hasMinCommunityWeight(
-      realm.account.config.minCommunityTokensToCreateGovernance
-    )
-  }
-  canCreateGovernanceUsingCouncilTokens() {
-    return false
-  }
-  canCreateGovernance(realm: ProgramAccount<Realm>) {
-    return (
-      this.canCreateGovernanceUsingCommunityTokens(realm) ||
-      this.canCreateGovernanceUsingCouncilTokens()
-    )
-  }
-  hasMinAmountToVote(mintPk: PublicKey) {
-    const isCommunity =
-      this.communityTokenRecord?.account.governingTokenMint.toBase58() ===
-      mintPk.toBase58()
-    const isCouncil =
-      this.councilTokenRecord?.account.governingTokenMint.toBase58() ===
-      mintPk.toBase58()
-    if (isCouncil) {
-      return false
-    }
-    if (isCommunity) {
-      return !this.votingPower.isZero()
-    }
-  }
-
-  getTokenRecordToCreateProposal(config: GovernanceConfig) {
-    // Prefer community token owner record as proposal owner
-    if (this.hasMinCommunityWeight(config.minCommunityTokensToCreateProposal)) {
-      return this.communityTokenRecord!
-    }
-    throw new Error('Not enough vote weight to create proposal')
-  }
-}
-
+/**
+ * @deprecated instead of using this, ask yourself what you are trying to do, and observe that there is no reason you'd need to use this class in order to do it.
+ */
 export class VoteNftWeight implements VoterWeightInterface {
   //TODO implement council
   communityTokenRecord: ProgramAccount<TokenOwnerRecord> | undefined
@@ -315,85 +244,9 @@ export class VoteNftWeight implements VoterWeightInterface {
   }
 }
 
-export class SwitchboardQueueVoteWeight implements VoterWeightInterface {
-  communityTokenRecord: ProgramAccount<TokenOwnerRecord> | undefined
-  votingPower: BN
-  councilTokenRecord: ProgramAccount<TokenOwnerRecord> | undefined
-
-  constructor(
-    communityTokenRecord: ProgramAccount<TokenOwnerRecord> | undefined,
-    votingPower: BN
-  ) {
-    this.communityTokenRecord = communityTokenRecord
-    this.councilTokenRecord = undefined
-    this.votingPower = votingPower
-  }
-
-  // Checks if the voter has any voting weight
-  hasAnyWeight() {
-    return !this.votingPower.isZero()
-  }
-
-  // Returns first available tokenRecord
-  getTokenRecord() {
-    if (this.communityTokenRecord) {
-      return this.communityTokenRecord.pubkey
-    }
-    throw new Error('Current wallet has no Token Owner Records')
-  }
-
-  hasMinCommunityWeight(minCommunityWeight: BN) {
-    return (
-      this.communityTokenRecord && this.votingPower.cmp(minCommunityWeight) >= 0
-    )
-  }
-  hasMinCouncilWeight(_minCouncilWeight: BN) {
-    return false
-  }
-
-  canCreateProposal(_config: GovernanceConfig) {
-    return this.votingPower.gt(new BN(0))
-  }
-  canCreateGovernanceUsingCommunityTokens(realm: ProgramAccount<Realm>) {
-    return true
-    return this.hasMinCommunityWeight(
-      realm.account.config.minCommunityTokensToCreateGovernance
-    )
-  }
-  canCreateGovernanceUsingCouncilTokens() {
-    return false
-  }
-  canCreateGovernance(realm: ProgramAccount<Realm>) {
-    return true
-    return (
-      this.canCreateGovernanceUsingCommunityTokens(realm) ||
-      this.canCreateGovernanceUsingCouncilTokens()
-    )
-  }
-  hasMinAmountToVote(mintPk: PublicKey) {
-    return true
-    const isCommunity =
-      this.communityTokenRecord?.account.governingTokenMint.toBase58() ===
-      mintPk.toBase58()
-    const isCouncil =
-      this.councilTokenRecord?.account.governingTokenMint.toBase58() ===
-      mintPk.toBase58()
-    if (isCouncil) {
-      return !this.councilTokenRecord?.account.governingTokenDepositAmount.isZero()
-    }
-    if (isCommunity) {
-      return !this.votingPower.isZero()
-    }
-  }
-
-  getTokenRecordToCreateProposal(_config: GovernanceConfig) {
-    if (this.communityTokenRecord !== undefined) {
-      return this.communityTokenRecord
-    }
-    throw new Error('Not enough vote weight to create proposal')
-  }
-}
-
+/**
+ * @deprecated instead of using this, ask yourself what you are trying to do, and observe that there is no reason you'd need to use this class in order to do it.
+ */
 export class VoterWeight implements VoterWeightInterface {
   communityTokenRecord: ProgramAccount<TokenOwnerRecord> | undefined
   councilTokenRecord: ProgramAccount<TokenOwnerRecord> | undefined
@@ -483,8 +336,20 @@ export class VoterWeight implements VoterWeightInterface {
     }
   }
 
-  getTokenRecordToCreateProposal(config: GovernanceConfig) {
-    // Prefer community token owner record as proposal owner
+  getTokenRecordToCreateProposal(
+    config: GovernanceConfig,
+    voteByCouncil: boolean
+  ) {
+    // if the vote is by council, prefer council token
+    if (voteByCouncil) {
+      if (this.councilTokenRecord && this.hasMinCouncilWeight(config.minCouncilTokensToCreateProposal)) {
+        return this.councilTokenRecord
+      }
+      if (this.communityTokenRecord) {
+        return this.communityTokenRecord
+      }
+    }
+    //  prefer community token owner record as proposal owner
     if (this.hasMinCommunityWeight(config.minCommunityTokensToCreateProposal)) {
       return this.communityTokenRecord!
     }
@@ -492,11 +357,66 @@ export class VoterWeight implements VoterWeightInterface {
       return this.councilTokenRecord!
     }
 
-    throw new Error('Not enough vote weight to create proposal')
+    throw new Error('Current wallet has no Token Owner Records')
+  }
+}
+
+// Deprecated: used to adapt the useLegacyVoterWeight hook to use the voter weight plugins,
+// without having to reference each plugin individually, and to support chaining.
+// Note - instead of this, you should probably be using the useRealmVoterWeightPlugins hook
+export class LegacyVoterWeightAdapter extends VoterWeight {
+  constructor(
+    readonly voterWeights: {
+      community: BN | undefined
+      council: BN | undefined
+    },
+    tokenOwnerRecords: {
+      community: ProgramAccount<TokenOwnerRecord> | undefined
+      council: ProgramAccount<TokenOwnerRecord> | undefined
+    }
+  ) {
+    super(tokenOwnerRecords.community, tokenOwnerRecords.council)
+  }
+
+  hasAnyWeight() {
+    return (
+      (!!this.voterWeights.community &&
+        !this.voterWeights.community.isZero()) ||
+      (!!this.voterWeights.council && !this.voterWeights.council.isZero())
+    )
+  }
+
+  hasMinCommunityWeight(minCommunityWeight: BN) {
+    return (
+      !!this.communityTokenRecord &&
+      this.voterWeights.community?.gte(minCommunityWeight)
+    )
+  }
+  hasMinCouncilWeight(minCouncilWeight: BN) {
+    return (
+      !!this.councilTokenRecord &&
+      this.voterWeights.council?.gte(minCouncilWeight)
+    )
+  }
+
+  hasMinAmountToVote(mintPk: PublicKey) {
+    const isCommunity =
+      this.communityTokenRecord?.account.governingTokenMint.toBase58() ===
+      mintPk.toBase58()
+    const isCouncil =
+      this.councilTokenRecord?.account.governingTokenMint.toBase58() ===
+      mintPk.toBase58()
+
+    if (isCouncil) return this.hasMinCouncilWeight(new BN(0))
+    if (isCommunity) return this.hasMinCommunityWeight(new BN(0))
+    return false
   }
 }
 
 // TODO treat this as temporary - it should delegate to the governance VoterWeight (frontend and on-chain)
+/**
+ * @deprecated instead of using this, ask yourself what you are trying to do, and observe that there is no reason you'd need to use this class in order to do it.
+ */
 export class SimpleGatedVoterWeight implements VoterWeightInterface {
   constructor(
     public communityTokenRecord: ProgramAccount<TokenOwnerRecord> | undefined,
@@ -550,7 +470,7 @@ export class SimpleGatedVoterWeight implements VoterWeightInterface {
   }
 }
 
-/// Returns max VoteWeight for given mint and max source
+/** Returns max VoteWeight for given mint and max source */
 export function getMintMaxVoteWeight(
   mint: MintInfo,
   maxVoteWeightSource: MintMaxVoteWeightSource
@@ -559,20 +479,27 @@ export function getMintMaxVoteWeight(
     return mint.supply
   }
 
-  const supplyFraction = maxVoteWeightSource.getSupplyFraction()
+  if (maxVoteWeightSource.type === MintMaxVoteWeightSourceType.SupplyFraction) {
+    const supplyFraction = maxVoteWeightSource.getSupplyFraction()
 
-  const maxVoteWeight = new BigNumber(supplyFraction.toString())
-    .multipliedBy(mint.supply.toString())
-    .shiftedBy(-MintMaxVoteWeightSource.SUPPLY_FRACTION_DECIMALS)
+    const maxVoteWeight = new BigNumber(supplyFraction.toString())
+      .multipliedBy(mint.supply.toString())
+      .shiftedBy(-MintMaxVoteWeightSource.SUPPLY_FRACTION_DECIMALS)
 
-  return new BN(maxVoteWeight.dp(0, BigNumber.ROUND_DOWN).toString())
+    return new BN(maxVoteWeight.dp(0, BigNumber.ROUND_DOWN).toString())
+  } else {
+    // absolute value
+    return maxVoteWeightSource.value
+  }
 }
 
-/// Returns max vote weight for a proposal
+/** Returns max vote weight for a proposal  */
 export function getProposalMaxVoteWeight(
   realm: Realm,
   proposal: Proposal,
-  governingTokenMint: MintInfo
+  governingTokenMint: MintInfo,
+  // For vetos we want to override the proposal.governingTokenMint
+  governingTokenMintPk?: PublicKey
 ) {
   // For finalized proposals the max is stored on the proposal in case it can change in the future
   if (proposal.isVoteFinalized() && proposal.maxVoteWeight) {
@@ -581,7 +508,7 @@ export function getProposalMaxVoteWeight(
 
   // Council votes are currently not affected by MaxVoteWeightSource
   if (
-    proposal.governingTokenMint.toBase58() ===
+    (governingTokenMintPk ?? proposal.governingTokenMint).toBase58() ===
     realm.config.councilMint?.toBase58()
   ) {
     return governingTokenMint.supply

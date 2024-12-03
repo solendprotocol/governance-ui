@@ -7,7 +7,7 @@ import {
 import { RpcContext, TOKEN_PROGRAM_ID } from '@solana/spl-governance'
 import { sendTransaction } from 'utils/send'
 
-import { BN } from '@project-serum/anchor'
+import { BN } from '@coral-xyz/anchor'
 import { LockupType } from 'VoteStakeRegistry/sdk/accounts'
 import { withCreateNewDeposit } from '../sdk/withCreateNewDeposit'
 import { getPeriod } from 'VoteStakeRegistry/tools/deposits'
@@ -114,7 +114,8 @@ export const voteRegistryLockDeposit = async ({
   if (!amountFromVoteRegistryDeposit.isZero()) {
     const period = getPeriod(lockUpPeriodInDays, lockupKind)
     const resetLockup = await client?.program.methods
-      .resetLockup(depositIdx, { [lockupKind]: {} }, period)
+        // The cast to any works around an anchor issue with interpreting enums
+      .resetLockup(depositIdx, { [lockupKind]: {} } as any, period)
       .accounts({
         registrar: registrar,
         voter: voter,

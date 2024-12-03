@@ -1,4 +1,3 @@
-import { PublicKey } from '@blockworks-foundation/mango-client'
 import Button, { LinkButton } from '@components/Button'
 import Input from '@components/inputs/Input'
 import Loading from '@components/Loading'
@@ -7,7 +6,7 @@ import useGovernanceAssets from '@hooks/useGovernanceAssets'
 import useQueryContext from '@hooks/useQueryContext'
 import useRealm from '@hooks/useRealm'
 import { getProgramVersionForRealm } from '@models/registry/api'
-import { BN } from '@project-serum/anchor'
+import { BN } from '@coral-xyz/anchor'
 import { RpcContext } from '@solana/spl-governance'
 import {
   getMintDecimalAmount,
@@ -15,11 +14,10 @@ import {
   getMintNaturalAmountFromDecimalAsBN,
 } from '@tools/sdk/units'
 import { precision } from '@utils/formatting'
-import tokenService from '@utils/services/token'
+import tokenPriceService from '@utils/services/tokenPrice'
 import BigNumber from 'bignumber.js'
 import { useRouter } from 'next/router'
 import { useEffect, useState } from 'react'
-import useWalletStore from 'stores/useWalletStore'
 import { SolendStrategy } from 'Strategies/types/types'
 import AdditionalProposalOptions from '@components/AdditionalProposalOptions'
 import { validateInstruction } from '@utils/instructionTools'
@@ -32,7 +30,19 @@ import {
   getReserveData,
   SolendSubStrategy,
 } from 'Strategies/protocols/solend'
-import useVotePluginsClientStore from 'stores/useVotePluginsClientStore'
+import { PublicKey } from '@solana/web3.js'
+import useWalletOnePointOh from '@hooks/useWalletOnePointOh'
+import { useRealmQuery } from '@hooks/queries/realm'
+import { useRealmConfigQuery } from '@hooks/queries/realmConfig'
+import {
+  useRealmCommunityMintInfoQuery,
+  useRealmCouncilMintInfoQuery,
+} from '@hooks/queries/mintInfo'
+import useLegacyConnectionContext from '@hooks/useLegacyConnectionContext'
+import { useRealmProposalsQuery } from '@hooks/queries/proposal'
+import { useLegacyVoterWeight } from '@hooks/queries/governancePower'
+import {useVotingClients} from "@hooks/useVotingClients";
+import {useVoteByCouncilToggle} from "@hooks/useVoteByCouncilToggle";
 
 const SOL_BUFFER = 0.02
 
@@ -49,27 +59,23 @@ const SolendDeposit = ({
 }) => {
   const router = useRouter()
   const { fmtUrlWithCluster } = useQueryContext()
-  const {
-    proposals,
-    realmInfo,
-    realm,
-    ownVoterWeight,
-    mint,
-    councilMint,
-    symbol,
-    config,
-  } = useRealm()
+  const realm = useRealmQuery().data?.result
+  const { symbol } = router.query
+  const config = useRealmConfigQuery().data?.result
+  const mint = useRealmCommunityMintInfoQuery().data?.result
+  const councilMint = useRealmCouncilMintInfoQuery().data?.result
+  const { result: ownVoterWeight } = useLegacyVoterWeight()
+  const { realmInfo } = useRealm()
+  const proposals = useRealmProposalsQuery().data
   const [isDepositing, setIsDepositing] = useState(false)
   const [deposits, setDeposits] = useState<{
     [reserveAddress: string]: number
   }>({})
-  const [voteByCouncil, setVoteByCouncil] = useState(false)
-  const client = useVotePluginsClientStore(
-    (s) => s.state.currentRealmVotingClient
-  )
-  const connection = useWalletStore((s) => s.connection)
-  const wallet = useWalletStore((s) => s.current)
-  const tokenInfo = tokenService.getTokenInfo(handledMint)
+  const { voteByCouncil, setVoteByCouncil } = useVoteByCouncilToggle();
+  const votingClients = useVotingClients();
+  const connection = useLegacyConnectionContext()
+  const wallet = useWalletOnePointOh()
+  const tokenInfo = tokenPriceService.getTokenInfo(handledMint)
   const {
     governedTokenAccountsWithoutNfts,
     auxiliaryTokenAccounts,
@@ -82,7 +88,7 @@ const SolendDeposit = ({
       : governedTokenAccount.extensions.token!.account.amount
   )
   const mintInfo = governedTokenAccount.extensions?.mint?.account
-  const tokenSymbol = tokenService.getTokenInfo(
+  const tokenSymbol = tokenPriceService.getTokenInfo(
     governedTokenAccount.extensions.mint!.publicKey.toBase58()
   )?.symbol
   const [form, setForm] = useState<{
@@ -137,6 +143,20 @@ const SolendDeposit = ({
       ]
 
       const relevantAccs = accounts
+        .filter((acc) => {
+          if (governedTokenAccount.isSol) {
+            return (
+              acc.extensions.token?.account.owner.toBase58() ===
+              governedTokenAccount.pubkey.toBase58()
+            )
+          } else {
+            return (
+              acc.extensions.token?.account.owner.toBase58() &&
+              acc.extensions.token.account.owner.toBase58() ===
+                governedTokenAccount.extensions.token?.account.owner.toBase58()
+            )
+          }
+        })
         .map((acc) => {
           const reserve = (proposedInvestment as SolendStrategy)?.reserves.find(
             (reserve) =>
@@ -177,9 +197,12 @@ const SolendDeposit = ({
       setDeposits(results)
     }
     getSlndCTokens()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- TODO please fix, it can cause difficult bugs. You might wanna check out https://bobbyhadz.com/blog/react-hooks-exhaustive-deps for info. -@asktree
   }, [])
 
   const handleDeposit = async () => {
+    if (ownVoterWeight === undefined) throw new Error()
+    if (proposals === undefined) throw new Error()
     const isValid = await validateInstruction({ schema, form, setFormErrors })
     if (!isValid) {
       return
@@ -215,7 +238,7 @@ const SolendDeposit = ({
             form.amount as number,
             governedTokenAccount.extensions.mint!.account.decimals
           ),
-          proposalCount: Object.keys(proposals).length,
+          proposalCount: proposals.length,
           action: 'Deposit',
         },
         realm!,
@@ -225,7 +248,7 @@ const SolendDeposit = ({
         governedTokenAccount!.governance!.account!.proposalCount,
         false,
         connection,
-        client
+        votingClients(voteByCouncil? 'council' : 'community')
       )
       const url = fmtUrlWithCluster(
         `/dao/${symbol}/proposal/${proposalAddress}`
@@ -281,9 +304,6 @@ const SolendDeposit = ({
             </div>
           </Select.Option>
         ))}
-        <Select.Option key={null} value={null}>
-          <div>Create new account</div>
-        </Select.Option>
       </Select>
       <div className="flex mb-1.5 text-sm">
         Amount

@@ -6,21 +6,28 @@ import {
   useAccountInvestments,
   ActiveInvestment,
 } from '@hooks/useAccountInvestments'
+import { Wallet } from '@models/treasury/Wallet'
 import { Status } from '@utils/uiTypes/Result'
 import { StrategyCard } from '@components/TreasuryAccount/AccountOverview'
 import DepositModal from 'Strategies/components/DepositModal'
 import Modal from '@components/Modal'
 import ConvertToMsol from '@components/TreasuryAccount/ConvertToMsol'
 import ConvertToStSol from '@components/TreasuryAccount/ConvertToStSol'
-import TradeOnSerum from '@components/TreasuryAccount/TradeOnSerum'
+import Trade from '@components/TreasuryAccount/Trade'
+import useTreasuryAccountStore from 'stores/useTreasuryAccountStore'
+import MangoModal from '@components/TreasuryAccount/MangoModal'
+import useLegacyConnectionContext from '@hooks/useLegacyConnectionContext'
 
 interface Props {
   className?: string
   asset: Token | Sol
+  wallet?: Wallet
   governanceAddress?: string
 }
 
 export default function Investments(props: Props) {
+  const { currentAccount, setCurrentAccount } = useTreasuryAccountStore()
+  const connection = useLegacyConnectionContext()
   const [showAvailableInvestments, setShowAvailableInvestments] = useState(
     false
   )
@@ -31,21 +38,29 @@ export default function Investments(props: Props) {
   ] = useState<ActiveInvestment | null>(null)
 
   const [alternativeInvestment, setAlternativeInvestment] = useState<
-    'Marinade' | 'Lido' | 'Serum' | null
+    'Marinade' | 'Lido' | 'Poseidon' | 'Mango' | null
   >(null)
 
   const investments = useAccountInvestments({
+    wallet: props.wallet,
     asset: props.asset,
     governanceAddress: props.governanceAddress,
   })
 
   useEffect(() => {
-    if (investments.status === Status.Ok) {
+    if (investments._tag === Status.Ok) {
       setShowAvailableInvestments(!investments.data.activeInvestments.length)
     }
   }, [investments])
 
-  switch (investments.status) {
+  useEffect(() => {
+    if (!currentAccount) {
+      setCurrentAccount(props.asset.raw, connection)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- TODO please fix, it can cause difficult bugs. You might wanna check out https://bobbyhadz.com/blog/react-hooks-exhaustive-deps for info. -@asktree
+  }, [connection, props])
+
+  switch (investments._tag) {
     case Status.Failed:
       return (
         <div className={props.className}>
@@ -127,7 +142,8 @@ export default function Investments(props: Props) {
                       switch (investment.protocolName) {
                         case 'Marinade':
                         case 'Lido':
-                        case 'Serum': {
+                        case 'Mango':
+                        case 'Poseidon': {
                           setAlternativeInvestment(investment.protocolName)
                           setProposedInvestment(null)
                           break
@@ -166,8 +182,6 @@ export default function Investments(props: Props) {
           {proposedInvestment && (
             <DepositModal
               governedTokenAccount={props.asset.raw}
-              mangoAccounts={investments.data.mangoAccounts}
-              currentPosition={proposedInvestment.investedAmount}
               apy={proposedInvestment.apy}
               handledMint={proposedInvestment.handledMint}
               onClose={() => {
@@ -180,6 +194,14 @@ export default function Investments(props: Props) {
               strategyName={proposedInvestment.strategyName}
               createProposalFcn={proposedInvestment.createProposalFcn}
             />
+          )}
+          {alternativeInvestment === 'Mango' && (
+            <Modal
+              isOpen
+              onClose={() => setAlternativeInvestment(null)}
+            >
+              <MangoModal account={props.asset.raw}></MangoModal>
+            </Modal>
           )}
           {alternativeInvestment === 'Marinade' && (
             <Modal
@@ -199,13 +221,13 @@ export default function Investments(props: Props) {
               <ConvertToStSol />
             </Modal>
           )}
-          {alternativeInvestment === 'Serum' && (
+          {alternativeInvestment === 'Poseidon' && (
             <Modal
               isOpen
               sizeClassName="sm:max-w-3xl"
               onClose={() => setAlternativeInvestment(null)}
             >
-              <TradeOnSerum tokenAccount={props.asset.raw} />
+              <Trade tokenAccount={props.asset.raw} />
             </Modal>
           )}
         </div>

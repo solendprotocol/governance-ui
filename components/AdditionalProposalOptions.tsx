@@ -1,21 +1,12 @@
 import { ChevronDownIcon } from '@heroicons/react/outline'
-import useRealm from '@hooks/useRealm'
 import VoteBySwitch from 'pages/dao/[symbol]/proposal/components/VoteBySwitch'
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { LinkButton } from './Button'
 import Input from './inputs/Input'
 import Textarea from './inputs/Textarea'
+import {useVoteByCouncilToggle} from "@hooks/useVoteByCouncilToggle";
 
-const AdditionalProposalOptions = ({
-  title,
-  description,
-  setTitle,
-  setDescription,
-  defaultTitle,
-  defaultDescription,
-  voteByCouncil,
-  setVoteByCouncil,
-}: {
+const AdditionalProposalOptions: React.FC<{
   title: string
   description: string
   setTitle: (evt) => void
@@ -24,9 +15,18 @@ const AdditionalProposalOptions = ({
   defaultDescription?: string
   voteByCouncil: boolean
   setVoteByCouncil: (val) => void
+}> = ({
+  title,
+  description,
+  setTitle,
+  setDescription,
+  defaultTitle,
+  defaultDescription,
+  voteByCouncil,
+  setVoteByCouncil,
 }) => {
   const [showOptions, setShowOptions] = useState(false)
-  const { canChooseWhoVote } = useRealm()
+  const { shouldShowVoteByCouncilToggle } = useVoteByCouncilToggle();
   return (
     <>
       <LinkButton
@@ -61,13 +61,13 @@ const AdditionalProposalOptions = ({
             value={description}
             onChange={setDescription}
           />
-          {canChooseWhoVote && (
-            <VoteBySwitch
-              checked={voteByCouncil}
-              onChange={() => {
-                setVoteByCouncil(!voteByCouncil)
-              }}
-            />
+          {shouldShowVoteByCouncilToggle && (
+              <VoteBySwitch
+                  checked={voteByCouncil}
+                  onChange={() => {
+                    setVoteByCouncil(!voteByCouncil)
+                  }}
+              ></VoteBySwitch>
           )}
         </div>
       )}

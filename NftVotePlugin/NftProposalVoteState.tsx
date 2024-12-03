@@ -1,40 +1,46 @@
-import useRealm from '@hooks/useRealm'
-import { nftPluginsPks } from '@hooks/useVotingPlugins'
+import { NFT_PLUGINS_PKS } from '@constants/plugins'
+import useWalletOnePointOh from '@hooks/useWalletOnePointOh'
 import { ProgramAccount, Proposal, ProposalState } from '@solana/spl-governance'
 import { useEffect } from 'react'
-import useVotePluginsClientStore from 'stores/useVotePluginsClientStore'
-import useWalletStore from 'stores/useWalletStore'
 import useNftProposalStore from './NftProposalStore'
-import useNftPluginStore from './store/nftPluginStore'
+import { useRealmConfigQuery } from '@hooks/queries/realmConfig'
+import { useProposalVoteRecordQuery } from '@hooks/queries/voteRecord'
+import { useVotingPop } from '@components/VotePanel/hooks'
+import { useRealmVoterWeightPlugins } from '@hooks/useRealmVoterWeightPlugins'
+import {useNftClient} from "../VoterWeightPlugins/useNftClient";
 
 const NftProposalVoteState = ({
   proposal,
 }: {
   proposal?: ProgramAccount<Proposal>
 }) => {
-  const { config, ownTokenRecord } = useRealm()
-  const { voteRecordsByVoter } = useWalletStore((s) => s.selectedProposal)
-  const plugin = useVotePluginsClientStore((s) => s.state.nftClient)
+  const config = useRealmConfigQuery().data?.result
+
+  const { nftClient } = useNftClient();
   const getCountedNfts = useNftProposalStore((s) => s.getCountedNfts)
   const countedNfts = useNftProposalStore((s) => s.countedNftsForProposal)
-  const wallet = useWalletStore((s) => s.current)
-  const votingPower = useNftPluginStore((s) => s.state.votingPower)
+  const wallet = useWalletOnePointOh()
+  const votingPop = useVotingPop()
+  const { totalCalculatedVoterWeight, isReady } = useRealmVoterWeightPlugins(
+    votingPop
+  )
   const isNftPlugin =
     config?.account.communityTokenConfig.voterWeightAddin &&
-    nftPluginsPks.includes(
+    NFT_PLUGINS_PKS.includes(
       config?.account.communityTokenConfig.voterWeightAddin?.toBase58()
     )
 
-  const ownVoteRecord = ownTokenRecord
-    ? voteRecordsByVoter[ownTokenRecord.account.governingTokenOwner.toBase58()]
-    : wallet?.publicKey && voteRecordsByVoter[wallet.publicKey.toBase58()]
+  const ownVoteRecord = useProposalVoteRecordQuery('electoral').data?.result
+
   const showVoteRecords =
+    isReady &&
+    totalCalculatedVoterWeight?.value &&
     countedNfts.length > 0 &&
-    countedNfts.length < votingPower.toNumber() &&
+    countedNfts.length < totalCalculatedVoterWeight.value.toNumber() &&
     !ownVoteRecord
 
   const useComponent =
-    plugin &&
+    nftClient &&
     proposal &&
     wallet?.connected &&
     isNftPlugin &&
@@ -43,8 +49,9 @@ const NftProposalVoteState = ({
 
   useEffect(() => {
     if (useComponent) {
-      getCountedNfts(plugin, proposal, wallet.publicKey!)
+      getCountedNfts(nftClient, proposal, wallet.publicKey!)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- TODO please fix, it can cause difficult bugs. You might wanna check out https://bobbyhadz.com/blog/react-hooks-exhaustive-deps for info. -@asktree
   }, [useComponent])
 
   return showVoteRecords && useComponent ? (

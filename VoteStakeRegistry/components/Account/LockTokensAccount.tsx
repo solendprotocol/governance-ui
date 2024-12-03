@@ -1,3 +1,4 @@
+import React, { useCallback } from 'react'
 import Button from '@components/Button'
 import useRealm from '@hooks/useRealm'
 import {
@@ -13,15 +14,16 @@ import PreviousRouteBtn from '@components/PreviousRouteBtn'
 import VotingPowerBox from '../TokenBalance/VotingPowerBox'
 import { PublicKey } from '@solana/web3.js'
 import { MintInfo } from '@solana/spl-token'
-import { BN } from '@project-serum/anchor'
-import tokenService from '@utils/services/token'
-import useWalletStore from 'stores/useWalletStore'
+import { BN } from '@coral-xyz/anchor'
+import tokenPriceService from '@utils/services/tokenPrice'
 import { getDeposits } from 'VoteStakeRegistry/tools/deposits'
-import { DepositWithMintAccount } from 'VoteStakeRegistry/sdk/accounts'
+import {DepositWithMintAccount, Registrar} from 'VoteStakeRegistry/sdk/accounts'
 import useDepositStore from 'VoteStakeRegistry/stores/useDepositStore'
 import { notify } from '@utils/notifications'
-import useVotePluginsClientStore from 'stores/useVotePluginsClientStore'
-import { getTokenOwnerRecordAddress } from '@solana/spl-governance'
+import {
+  getTokenOwnerRecordAddress,
+  GoverningTokenRole,
+} from '@solana/spl-governance'
 import InlineNotification from '@components/InlineNotification'
 import {
   LightningBoltIcon,
@@ -29,8 +31,19 @@ import {
   LockClosedIcon,
 } from '@heroicons/react/outline'
 import { getMintMetadata } from '@components/instructions/programs/splToken'
-import Account from './Account'
 import { abbreviateAddress } from '@utils/formatting'
+import { TokenDeposit } from '@components/TokenBalance/TokenDeposit'
+import useWalletOnePointOh from '@hooks/useWalletOnePointOh'
+import { useRealmQuery } from '@hooks/queries/realm'
+import { useTokenOwnerRecordByPubkeyQuery } from '@hooks/queries/tokenOwnerRecord'
+import { useRealmConfigQuery } from '@hooks/queries/realmConfig'
+import {
+  useRealmCommunityMintInfoQuery,
+  useRealmCouncilMintInfoQuery,
+} from '@hooks/queries/mintInfo'
+import { useConnection } from '@solana/wallet-adapter-react'
+import { useVsrGovpower } from '@hooks/queries/plugins/vsr'
+import {useVsrClient} from "../../../VoterWeightPlugins/useVsrClient";
 
 interface DepositBox {
   mintPk: PublicKey
@@ -40,32 +53,43 @@ interface DepositBox {
 }
 const unlockedTypes = ['none']
 
-const LockTokensAccount = ({ tokenOwnerRecordPk }) => {
-  const {
-    realm,
-    realmInfo,
-    mint,
-    tokenRecords,
-    councilMint,
-    config,
-  } = useRealm()
+const LockTokensAccount: React.FC<{
+  tokenOwnerRecordPk: PublicKey
+  children: React.ReactNode
+}> = ({ tokenOwnerRecordPk, children }) => {
+  const realm = useRealmQuery().data?.result
+  const config = useRealmConfigQuery().data?.result
+  const mint = useRealmCommunityMintInfoQuery().data?.result
+  const councilMint = useRealmCouncilMintInfoQuery().data?.result
+  const { realmInfo } = useRealm()
   const [isLockModalOpen, setIsLockModalOpen] = useState(false)
-  const client = useVotePluginsClientStore((s) => s.state.vsrClient)
+  const { vsrClient: client, plugin } = useVsrClient();
+  const registrar = plugin?.params as Registrar | undefined;
+
+  const isZeroMultiplierConfig = !registrar?.votingMints.filter(
+    (x) => !x.maxExtraLockupVoteWeightScaledFactor.isZero()
+  ).length
+
   const [reducedDeposits, setReducedDeposits] = useState<DepositBox[]>([])
   const ownDeposits = useDepositStore((s) => s.state.deposits)
   const [deposits, setDeposits] = useState<DepositWithMintAccount[]>([])
-  const [votingPower, setVotingPower] = useState<BN>(new BN(0))
+  const votingPower = useVsrGovpower().data?.result ?? new BN(0)
   const [votingPowerFromDeposits, setVotingPowerFromDeposits] = useState<BN>(
     new BN(0)
   )
   const [isOwnerOfDeposits, setIsOwnerOfDeposits] = useState(true)
-  const tokenOwnerRecordWalletPk = Object.keys(tokenRecords)?.find(
-    (key) => tokenRecords[key]?.pubkey?.toBase58() === tokenOwnerRecordPk
+
+  const { data: tokenOwnerRecord } = useTokenOwnerRecordByPubkeyQuery(
+    tokenOwnerRecordPk
   )
+  const tokenOwnerRecordWalletPk =
+    tokenOwnerRecord?.result?.account.governingTokenOwner
+
   const [isLoading, setIsLoading] = useState(false)
-  const connection = useWalletStore((s) => s.connection.current)
-  const wallet = useWalletStore((s) => s.current)
-  const connected = useWalletStore((s) => s.connected)
+  const { connection } = useConnection()
+  const wallet = useWalletOnePointOh()
+  const publicKey = wallet?.publicKey ?? null
+  const connected = wallet?.connected
   const mainBoxesClasses = 'bg-bkg-1 col-span-1 p-4 rounded-md'
   const isNextSameRecord = (x, next) => {
     const nextType = Object.keys(next.lockup.kind)[0]
@@ -77,26 +101,22 @@ const LockTokensAccount = ({ tokenOwnerRecordPk }) => {
           unlockedTypes.includes(nextType)))
     )
   }
-  const handleGetDeposits = async () => {
+  const handleGetDeposits = useCallback(async () => {
     setIsLoading(true)
     try {
       if (
         config?.account.communityTokenConfig.voterWeightAddin &&
-        realm!.pubkey &&
-        wallet?.publicKey &&
+        realm?.pubkey &&
+        publicKey &&
         client
       ) {
-        const {
-          deposits,
-          votingPower,
-          votingPowerFromDeposits,
-        } = await getDeposits({
-          realmPk: realm!.pubkey,
-          communityMintPk: realm!.account.communityMint,
+        const { deposits, votingPowerFromDeposits } = await getDeposits({
+          realmPk: realm.pubkey,
+          communityMintPk: realm.account.communityMint,
           walletPk: tokenOwnerRecordWalletPk
             ? new PublicKey(tokenOwnerRecordWalletPk)
-            : wallet.publicKey,
-          client: client!,
+            : publicKey,
+          client: client,
           connection: connection,
         })
         const reducedDeposits = deposits.reduce((curr, next) => {
@@ -129,12 +149,10 @@ const LockTokensAccount = ({ tokenOwnerRecordPk }) => {
           return curr
         }, [] as DepositBox[])
         setVotingPowerFromDeposits(votingPowerFromDeposits)
-        setVotingPower(votingPower)
         setDeposits(deposits)
         setReducedDeposits(reducedDeposits)
       } else if (!wallet?.connected) {
         setVotingPowerFromDeposits(new BN(0))
-        setVotingPower(new BN(0))
         setDeposits([])
         setReducedDeposits([])
       }
@@ -146,41 +164,49 @@ const LockTokensAccount = ({ tokenOwnerRecordPk }) => {
       })
     }
     setIsLoading(false)
-  }
-  useEffect(() => {
-    if (
-      JSON.stringify(ownDeposits) !== JSON.stringify(deposits) &&
-      isOwnerOfDeposits
-    ) {
-      handleGetDeposits()
-    }
-  }, [JSON.stringify(ownDeposits), ownDeposits.length])
+  }, [
+    client,
+    config?.account.communityTokenConfig.voterWeightAddin,
+    connection,
+    publicKey,
+    realm?.account.communityMint,
+    realm?.pubkey,
+    tokenOwnerRecordWalletPk,
+    wallet?.connected,
+  ])
+
   useEffect(() => {
     handleGetDeposits()
-  }, [isOwnerOfDeposits, client])
+  }, [
+    isOwnerOfDeposits,
+    client,
+    handleGetDeposits,
+    ownDeposits, //side effect
+  ])
+
+  const depositMint =
+    !mint?.supply.isZero() ||
+    config?.account.communityTokenConfig.maxVoterWeightAddin ||
+    realm?.account.communityMint
+      ? realm?.account.communityMint
+      : !councilMint?.supply.isZero()
+      ? realm?.account.config.councilMint
+      : undefined
+
   useEffect(() => {
-    const getTokenOwnerRecord = async () => {
-      const defaultMint =
-        !mint?.supply.isZero() ||
-        config?.account.communityTokenConfig.maxVoterWeightAddin
-          ? realm!.account.communityMint
-          : !councilMint?.supply.isZero()
-          ? realm!.account.config.councilMint
-          : undefined
-      const tokenOwnerRecordAddress = await getTokenOwnerRecordAddress(
-        realm!.owner,
-        realm!.pubkey,
-        defaultMint!,
-        wallet!.publicKey!
-      )
-      setIsOwnerOfDeposits(
-        tokenOwnerRecordAddress.toBase58() === tokenOwnerRecordPk
-      )
-    }
-    if (realm && wallet?.connected) {
+    if (realm?.owner && realm.pubkey && publicKey !== null && depositMint) {
+      const getTokenOwnerRecord = async () => {
+        const tokenOwnerRecordAddress = await getTokenOwnerRecordAddress(
+          realm.owner,
+          realm.pubkey,
+          depositMint,
+          publicKey
+        )
+        setIsOwnerOfDeposits(tokenOwnerRecordAddress.equals(tokenOwnerRecordPk))
+      }
       getTokenOwnerRecord()
     }
-  }, [realm?.pubkey.toBase58(), wallet?.connected, tokenOwnerRecordPk])
+  }, [tokenOwnerRecordPk, depositMint, realm, publicKey])
 
   const hasLockedTokens = useMemo(() => {
     return reducedDeposits.find((d) => d.lockUpKind !== 'none')
@@ -204,7 +230,7 @@ const LockTokensAccount = ({ tokenOwnerRecordPk }) => {
             )?.index
         )
     )
-  }, [deposits])
+  }, [deposits, realm?.account.communityMint])
 
   return (
     <div className="grid grid-cols-12 gap-4">
@@ -213,15 +239,24 @@ const LockTokensAccount = ({ tokenOwnerRecordPk }) => {
           <PreviousRouteBtn />
         </div>
         <div className="flex items-center justify-between mb-4">
-          <h1 className="leading-none mb-0">
-            Your Account{' '}
-            <span className="font-normal text-fgd-2 text-xs">
-              ({realmInfo?.displayName})
+          {realmInfo?.ogImage && (
+            <img
+              src={realmInfo?.ogImage}
+              className="mr-2 rouninded-full w-8 h-8"
+            />
+          )}
+          <h1 className="leading-none flex flex-col mb-0">
+            <span className="font-normal text-fgd-2 text-xs mb-2">
+              {realmInfo?.displayName}
             </span>
+            My governance power{' '}
           </h1>
 
           <div className="ml-auto flex flex-row">
-            <DepositCommunityTokensBtn className="mr-3" />
+            <DepositCommunityTokensBtn
+              inAccountDetails={true}
+              className="mr-3"
+            />
             <WithDrawCommunityTokens />
           </div>
         </div>
@@ -264,10 +299,11 @@ const LockTokensAccount = ({ tokenOwnerRecordPk }) => {
                         x.mint,
                         x.currentAmount
                       ).toNumber() *
-                      tokenService.getUSDTokenPrice(x.mintPk.toBase58())
+                      tokenPriceService.getUSDTokenPrice(x.mintPk.toBase58())
                     const tokenName =
                       getMintMetadata(x.mintPk)?.name ||
-                      tokenService.getTokenInfo(x.mintPk.toBase58())?.name ||
+                      tokenPriceService.getTokenInfo(x.mintPk.toBase58())
+                        ?.name ||
                       abbreviateAddress(x.mintPk)
                     const formatter = Intl.NumberFormat('en', {
                       notation: 'compact',
@@ -329,22 +365,25 @@ const LockTokensAccount = ({ tokenOwnerRecordPk }) => {
                       )?.index
                   )
                   ?.map((x, idx) => (
-                    <DepositCard deposit={x} key={idx}></DepositCard>
+                    <DepositCard deposit={x} key={idx} registrar={registrar}></DepositCard>
                   ))}
-                <div className="border border-fgd-4 flex flex-col items-center justify-center p-6 rounded-lg">
-                  <LightningBoltIcon className="h-8 mb-2 text-primary-light w-8" />
-                  <p className="flex text-center pb-6">
-                    Increase your voting power by<br></br> locking your tokens.
-                  </p>
-                  <Button onClick={() => setIsLockModalOpen(true)}>
-                    <div className="flex items-center">
-                      <LockClosedIcon className="h-5 mr-1.5 w-5" />
-                      <span>Lock Tokens</span>
-                    </div>
-                  </Button>
-                </div>
+                {!isZeroMultiplierConfig && (
+                  <div className="border border-fgd-4 flex flex-col items-center justify-center p-6 rounded-lg">
+                    <LightningBoltIcon className="h-8 mb-2 text-primary-light w-8" />
+                    <p className="flex text-center pb-6">
+                      Increase your voting power by<br></br> locking your
+                      tokens.
+                    </p>
+                    <Button onClick={() => setIsLockModalOpen(true)}>
+                      <div className="flex items-center">
+                        <LockClosedIcon className="h-5 mr-1.5 w-5" />
+                        <span>Lock Tokens</span>
+                      </div>
+                    </Button>
+                  </div>
+                )}
               </div>
-            ) : (
+            ) : !isZeroMultiplierConfig ? (
               <div className="border border-fgd-4 flex flex-col items-center justify-center p-6 rounded-lg mb-3">
                 <LightningBoltIcon className="h-8 mb-2 text-primary-light w-8" />
                 <p className="flex text-center pb-6">
@@ -357,7 +396,7 @@ const LockTokensAccount = ({ tokenOwnerRecordPk }) => {
                   </div>
                 </Button>
               </div>
-            )}
+            ) : null}
           </div>
         ) : (
           <div className="border border-fgd-4 flex flex-col items-center justify-center p-6 rounded-lg">
@@ -371,8 +410,15 @@ const LockTokensAccount = ({ tokenOwnerRecordPk }) => {
             onClose={() => setIsLockModalOpen(false)}
           ></LockTokensModal>
         )}
+        <div className="mt-4">
+          <TokenDeposit
+            mint={councilMint}
+            tokenRole={GoverningTokenRole.Council}
+            inAccountDetails={true}
+          />
+        </div>
       </div>
-      {connected && <Account withHeader={false}></Account>}
+      {connected && children}
     </div>
   )
 }

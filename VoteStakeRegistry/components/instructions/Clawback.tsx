@@ -1,7 +1,11 @@
-import React, { useContext, useEffect, useState } from 'react'
-import useRealm from '@hooks/useRealm'
-import { TransactionInstruction } from '@solana/web3.js'
-import useWalletStore from 'stores/useWalletStore'
+import React, {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react'
+import { PublicKey, TransactionInstruction } from '@solana/web3.js'
 import { tryGetMint } from '@utils/tokens'
 import {
   ClawbackForm,
@@ -18,7 +22,6 @@ import { NewProposalContext } from 'pages/dao/[symbol]/proposal/new'
 import GovernedAccountSelect from 'pages/dao/[symbol]/proposal/components/GovernedAccountSelect'
 import * as yup from 'yup'
 import {
-  Deposit,
   DepositWithMintAccount,
   getRegistrarPDA,
   emptyPk,
@@ -27,11 +30,14 @@ import {
 import Select from '@components/inputs/Select'
 import { tryGetRegistrar } from 'VoteStakeRegistry/sdk/api'
 import { fmtMintAmount } from '@tools/sdk/units'
-import tokenService from '@utils/services/token'
+import tokenPriceService from '@utils/services/tokenPrice'
 import { getClawbackInstruction } from 'VoteStakeRegistry/actions/getClawbackInstruction'
 import { abbreviateAddress } from '@utils/formatting'
-import useVotePluginsClientStore from 'stores/useVotePluginsClientStore'
 import { AssetAccount } from '@utils/uiTypes/assets'
+import { useRealmQuery } from '@hooks/queries/realm'
+import useLegacyConnectionContext from '@hooks/useLegacyConnectionContext'
+import Input from '@components/inputs/Input'
+import {useVsrClient} from "VoterWeightPlugins/useVsrClient";
 
 const Clawback = ({
   index,
@@ -40,21 +46,38 @@ const Clawback = ({
   index: number
   governance: ProgramAccount<Governance> | null
 }) => {
-  const client = useVotePluginsClientStore((s) => s.state.vsrClient)
-  const connection = useWalletStore((s) => s.connection)
-  const { realm } = useRealm()
+  const { vsrClient } = useVsrClient();
+  const connection = useLegacyConnectionContext()
+  const realm = useRealmQuery().data?.result
+
   const {
     governedTokenAccountsWithoutNfts,
     governancesArray,
   } = useGovernanceAssets()
-  const shouldBeGoverned = index !== 0 && governance
   const [voters, setVoters] = useState<Voter[]>([])
   const [deposits, setDeposits] = useState<DepositWithMintAccount[]>([])
   const [form, setForm] = useState<ClawbackForm>({
     governedTokenAccount: undefined,
     voter: null,
     deposit: null,
+    holdupTime: 0,
   })
+  const formDeposits = form.deposit
+  const schema = useMemo(
+    () =>
+      yup.object().shape({
+        governedTokenAccount: yup
+          .object()
+          .required('Clawback destination required'),
+        voter: yup.object().nullable().required('Voter required'),
+        deposit: yup.object().nullable().required('Deposit required'),
+      }),
+    []
+  )
+
+  const realmAuthorityGov = governancesArray.find(
+    (x) => x.pubkey.toBase58() === realm?.account.authority?.toBase58()
+  )
   const [governedAccount, setGovernedAccount] = useState<
     ProgramAccount<Governance> | undefined
   >(undefined)
@@ -64,7 +87,7 @@ const Clawback = ({
     setFormErrors({})
     setForm({ ...form, [propertyName]: value })
   }
-  async function getInstruction(): Promise<UiInstruction> {
+  const getInstruction = useCallback(async () => {
     const isValid = await validateInstruction({ schema, form, setFormErrors })
     let serializedInstruction = ''
     const prerequisiteInstructions: TransactionInstruction[] = []
@@ -87,7 +110,7 @@ const Clawback = ({
         voterDepositIndex: form.deposit.index,
         grantMintPk: form.deposit.mint.publicKey,
         realmCommunityMintPk: realm!.account.communityMint,
-        client,
+        client: vsrClient,
       })
       serializedInstruction = serializeInstructionToBase64(clawbackIx!)
     }
@@ -95,35 +118,35 @@ const Clawback = ({
     const obj: UiInstruction = {
       serializedInstruction,
       isValid,
-      governance: governancesArray.find(
-        (x) => x.pubkey.toBase58() === realm?.account.authority?.toBase58()
-      ),
+      governance: realmAuthorityGov,
       prerequisiteInstructions: prerequisiteInstructions,
-      chunkSplitByDefault: true,
+      customHoldUpTime: form.holdupTime,
     }
     return obj
-  }
+  }, [vsrClient, form, realmAuthorityGov, realm, schema])
+
   useEffect(() => {
     handleSetInstructions(
       { governedAccount: governedAccount, getInstruction },
       index
     )
-  }, [form])
+  }, [form, getInstruction, governedAccount, handleSetInstructions, index])
+
   useEffect(() => {
     setGovernedAccount(
-      governancesArray.find(
+      governancesArray?.find(
         (x) => x.pubkey.toBase58() === realm?.account.authority?.toBase58()
       )
     )
-  }, [form.governedTokenAccount])
+  }, [form.governedTokenAccount, governancesArray, realm?.account.authority])
   useEffect(() => {
     const getVoters = async () => {
-      const { registrar } = await getRegistrarPDA(
-        realm!.pubkey,
-        realm!.account.communityMint,
-        client!.program.programId
+      const { registrar } = getRegistrarPDA(
+          realm!.pubkey,
+          realm!.account.communityMint,
+          vsrClient!.program.programId
       )
-      const resp = await client?.program.account.voter.all([
+      const resp = await vsrClient?.program.account.voter.all([
         {
           memcmp: {
             offset: 40,
@@ -135,26 +158,27 @@ const Clawback = ({
         resp
           ?.filter(
             (x) =>
-              (x.account.deposits as Deposit[]).filter(
+              (x.account.deposits).filter(
                 (depo) => depo.allowClawback
               ).length
           )
-          .map((x) => x.account as Voter) || []
+            // The cast works around an anchor issue with interpreting enums
+          .map((x) => x.account as unknown as Voter) || []
 
       setVoters([...voters])
     }
-    if (client) {
+    if (vsrClient) {
       getVoters()
     }
-  }, [client])
+  }, [vsrClient, realm])
   useEffect(() => {
     const getOwnedDepositsInfo = async () => {
-      const { registrar } = await getRegistrarPDA(
-        realm!.pubkey,
-        realm!.account.communityMint,
-        client!.program.programId
+      const { registrar } = getRegistrarPDA(
+          realm!.pubkey,
+          realm!.account.communityMint,
+          vsrClient!.program.programId
       )
-      const existingRegistrar = await tryGetRegistrar(registrar, client!)
+      const existingRegistrar = await tryGetRegistrar(registrar, vsrClient!)
       const mintCfgs = existingRegistrar?.votingMints
       const mints = {}
       if (mintCfgs) {
@@ -181,23 +205,22 @@ const Clawback = ({
     } else {
       setDeposits([])
     }
-    setForm({ ...form, deposit: null, governedTokenAccount: undefined })
-  }, [form.voter])
+
+    setForm((prevForm) => ({
+      ...prevForm,
+      deposit: null,
+      governedTokenAccount: undefined,
+    }))
+  }, [vsrClient, connection, form.voter, realm])
+
   useEffect(() => {
-    setForm({ ...form, governedTokenAccount: undefined })
-  }, [form.deposit])
-  const schema = yup.object().shape({
-    governedTokenAccount: yup
-      .object()
-      .required('Clawback destination required'),
-    voter: yup.object().nullable().required('Voter required'),
-    deposit: yup.object().nullable().required('Deposit required'),
-  })
+    setForm((prevForm) => ({ ...prevForm, governedTokenAccount: undefined }))
+  }, [formDeposits])
 
   const getOwnedDepositsLabel = (deposit: DepositWithMintAccount | null) => {
     const symbol = deposit
-      ? tokenService.getTokenInfo(deposit.mint.publicKey.toBase58())?.symbol ||
-        ''
+      ? tokenPriceService.getTokenInfo(deposit.mint.publicKey.toBase58())
+          ?.symbol || ''
       : null
     return deposit
       ? `${fmtMintAmount(
@@ -208,6 +231,23 @@ const Clawback = ({
   }
   return (
     <>
+      <p>
+        Use only with realm authority governance cant be executed with other
+        governances
+      </p>
+      <p>governance: {realmAuthorityGov?.pubkey.toBase58()}</p>
+      <p>
+        wallet:{' '}
+        {realmAuthorityGov
+          ? PublicKey.findProgramAddressSync(
+              [
+                Buffer.from('native-treasury'),
+                realmAuthorityGov!.pubkey.toBuffer(),
+              ],
+              realm!.owner
+            )[0].toBase58()
+          : null}
+      </p>
       <Select
         label="Voter"
         onChange={(value) => {
@@ -245,6 +285,7 @@ const Clawback = ({
           })}
       </Select>
       <GovernedAccountSelect
+        type={'token'}
         label="Clawback destination"
         governedAccounts={
           governedTokenAccountsWithoutNfts.filter(
@@ -258,9 +299,19 @@ const Clawback = ({
         }}
         value={form.governedTokenAccount}
         error={formErrors['governedTokenAccount']}
-        shouldBeGoverned={shouldBeGoverned}
         governance={governance}
       ></GovernedAccountSelect>
+      <Input
+        label="Instruction hold up time (days)"
+        type="number"
+        value={form.holdupTime}
+        onChange={(evt) =>
+          handleSetForm({
+            value: evt.target.value,
+            propertyName: 'holdupTime',
+          })
+        }
+      ></Input>
     </>
   )
 }

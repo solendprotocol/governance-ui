@@ -1,10 +1,10 @@
 import { ExternalLinkIcon } from '@heroicons/react/outline'
 import useTransactionsStore from 'stores/useTransactionStore'
-import useWalletStore from 'stores/useWalletStore'
 import Button from './Button'
 import { getExplorerUrl } from './explorer/tools'
 import Loading from './Loading'
 import Modal from './Modal'
+import useLegacyConnectionContext from '@hooks/useLegacyConnectionContext'
 
 const TransactionLoader = () => {
   const {
@@ -17,7 +17,7 @@ const TransactionLoader = () => {
     hasErrors,
     closeTransactionProcess,
   } = useTransactionsStore()
-  const connection = useWalletStore((s) => s.connection)
+  const connection = useLegacyConnectionContext()
   const currentlyProcessing = processedTransactions + 1
   return isProcessing ? (
     <Modal
@@ -48,7 +48,9 @@ const TransactionLoader = () => {
             </a>
           </div>
           <div className="text-xs text-red pb-1">Error</div>
-          <div className="mb-5 bg-bkg-1 p-3 rounded-md text-xs">{error}</div>
+          <div className="mb-5 bg-bkg-1 p-3 rounded-md text-xs break-words">
+            {error}
+          </div>
           <div className="flex justify-center">
             <Button onClick={() => retryCallback!()}>Retry</Button>
           </div>

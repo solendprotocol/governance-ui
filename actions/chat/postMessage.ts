@@ -1,7 +1,7 @@
 import {
   PublicKey,
   Keypair,
-  Transaction,
+  // Transaction,
   TransactionInstruction,
 } from '@solana/web3.js'
 import {
@@ -14,8 +14,14 @@ import { ChatMessageBody } from '@solana/spl-governance'
 import { withPostChatMessage } from '@solana/spl-governance'
 import { ProgramAccount } from '@solana/spl-governance'
 import { RpcContext } from '@solana/spl-governance'
-import { sendTransaction } from '../../utils/send'
 import { VotingClient } from '@utils/uiTypes/VotePlugin'
+import { chunks } from '@utils/helpers'
+import {
+  SequenceType,
+  sendTransactionsV3,
+  txBatchesToInstructionSetWithSigners,
+} from '@utils/sendTransactions'
+import { sendSignAndConfirmTransactionsProps } from '@blockworks-foundation/mangolana/lib/transactions'
 
 export async function postChatMessage(
   { connection, wallet, programId, walletPubkey }: RpcContext,
@@ -28,14 +34,15 @@ export async function postChatMessage(
 ) {
   const signers: Keypair[] = []
   const instructions: TransactionInstruction[] = []
+  const createNftTicketsIxs: TransactionInstruction[] = []
 
   const governanceAuthority = walletPubkey
   const payer = walletPubkey
   //will run only if plugin is connected with realm
   const plugin = await client?.withUpdateVoterWeightRecord(
     instructions,
-    tokeOwnerRecord,
-    'commentProposal'
+    'commentProposal',
+    createNftTicketsIxs
   )
 
   await withPostChatMessage(
@@ -54,8 +61,58 @@ export async function postChatMessage(
     plugin?.voterWeightPk
   )
 
-  const transaction = new Transaction()
-  transaction.add(...instructions)
+  // createTicketIxs is a list of instructions that create nftActionTicket only for nft-voter-v2 plugin
+  // so it will be empty for other plugins or just spl-governance
+  const nftTicketAccountsChuncks = chunks(createNftTicketsIxs, 1)
 
-  await sendTransaction({ transaction, wallet, connection, signers })
+  const postMessageIxsChunk = [instructions]
+
+  const instructionsChunks = [
+    ...nftTicketAccountsChuncks.map((txBatch, batchIdx) => {
+      return {
+        instructionsSet: txBatchesToInstructionSetWithSigners(
+          txBatch,
+          [],
+          batchIdx
+        ),
+        sequenceType: SequenceType.Parallel,
+      }
+    }),
+    ...postMessageIxsChunk.map((txBatch, batchIdx) => {
+      return {
+        instructionsSet: txBatchesToInstructionSetWithSigners(
+          txBatch,
+          [signers],
+          batchIdx
+        ),
+        sequenceType: SequenceType.Sequential,
+      }
+    }),
+  ]
+
+  await postComment({
+    connection,
+    wallet,
+    transactionInstructions: instructionsChunks,
+    callbacks: undefined,
+  })
+}
+
+export async function postComment(
+  transactionProps: sendSignAndConfirmTransactionsProps & {
+    lookupTableAccounts?: any
+    autoFee?: boolean
+}) {
+  try {
+    await sendTransactionsV3(transactionProps)
+  } catch (e) {
+    if (e.message.indexOf('Transaction too large:') !== -1) {
+      const numbers = e.message.match(/\d+/g)
+      const [size, maxSize] = numbers ? numbers.map(Number) : [0, 0]
+      if (size > maxSize) {
+        throw new Error(`You must reduce your comment by ${size - maxSize} character(s).`)
+      }
+    }
+    throw e
+  }
 }

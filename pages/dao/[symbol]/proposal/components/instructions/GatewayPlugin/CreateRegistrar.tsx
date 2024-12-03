@@ -1,28 +1,26 @@
-import React, { useContext, useEffect, useMemo, useState } from 'react'
+import { useContext, useEffect, useMemo, useState } from 'react'
 import * as yup from 'yup'
 import {
   Governance,
   ProgramAccount,
   serializeInstructionToBase64,
-  SYSTEM_PROGRAM_ID,
 } from '@solana/spl-governance'
 import { validateInstruction } from '@utils/instructionTools'
 import { NameValue, UiInstruction } from '@utils/uiTypes/proposalCreationTypes'
 
-import useWalletStore from 'stores/useWalletStore'
-import useRealm from '@hooks/useRealm'
-import useVotePluginsClientStore from 'stores/useVotePluginsClientStore'
 import { NewProposalContext } from '../../../new'
-import InstructionForm, {
-  InstructionInput,
-  InstructionInputType,
-} from '../FormCreator'
+import InstructionForm, { InstructionInput } from '../FormCreator'
+import { InstructionInputType } from '../inputInstructionType'
 import { AssetAccount } from '@utils/uiTypes/assets'
 import useGovernanceAssets from '@hooks/useGovernanceAssets'
 import { PublicKey } from '@solana/web3.js'
 import { InformationCircleIcon } from '@heroicons/react/outline'
 import Tooltip from '@components/Tooltip'
-import { getRegistrarPDA } from '@utils/plugin/accounts'
+import useWalletOnePointOh from '@hooks/useWalletOnePointOh'
+import { useRealmQuery } from '@hooks/queries/realm'
+import {availablePasses} from "../../../../../../../GatewayPlugin/config";
+import {createCivicRegistrarIx} from "../../../../../../../GatewayPlugin/sdk/api";
+import {useGatewayVoterWeightPlugin} from "../../../../../../../VoterWeightPlugins";
 
 interface CreateGatewayRegistrarForm {
   governedAccount: AssetAccount | undefined
@@ -38,11 +36,11 @@ const CreateGatewayPluginRegistrar = ({
   index: number
   governance: ProgramAccount<Governance> | null
 }) => {
-  const { realm, realmInfo } = useRealm()
-  const gatewayClient = useVotePluginsClientStore((s) => s.state.gatewayClient)
+  const realm = useRealmQuery().data?.result
+  const { gatewayClient } = useGatewayVoterWeightPlugin();
   const { assetAccounts } = useGovernanceAssets()
-  const wallet = useWalletStore((s) => s.current)
-  const shouldBeGoverned = index !== 0 && governance
+  const wallet = useWalletOnePointOh()
+  const shouldBeGoverned = !!(index !== 0 && governance)
   const [form, setForm] = useState<CreateGatewayRegistrarForm>()
   const [formErrors, setFormErrors] = useState({})
   const { handleSetInstructions } = useContext(NewProposalContext)
@@ -61,39 +59,20 @@ const CreateGatewayPluginRegistrar = ({
     if (
       isValid &&
       form!.governedAccount?.governance?.account &&
-      wallet?.publicKey
+      wallet?.publicKey && realm && gatewayClient
     ) {
-      const { registrar } = await getRegistrarPDA(
-        realm!.pubkey,
-        realm!.account.communityMint,
-        gatewayClient!.program.programId
+      const createRegistrarIx = await createCivicRegistrarIx(
+        realm,
+          wallet.publicKey,
+          gatewayClient,
+          chosenGatekeeperNetwork!,
       )
-
-      const remainingAccounts = form!.predecessor
-        ? [{ pubkey: form!.predecessor, isSigner: false, isWritable: false }]
-        : []
-
-      const createRegistrarIx = await gatewayClient!.program.methods
-        .createRegistrar(false)
-        .accounts({
-          registrar,
-          realm: realm!.pubkey,
-          governanceProgramId: realmInfo!.programId,
-          realmAuthority: realm!.account.authority!,
-          governingTokenMint: realm!.account.communityMint!,
-          gatekeeperNetwork: chosenGatekeeperNetwork,
-          payer: wallet.publicKey!,
-          systemProgram: SYSTEM_PROGRAM_ID,
-        })
-        .remainingAccounts(remainingAccounts)
-        .instruction()
       serializedInstruction = serializeInstructionToBase64(createRegistrarIx)
     }
     return {
       serializedInstruction: serializedInstruction,
       isValid,
       governance: form!.governedAccount?.governance,
-      chunkSplitByDefault: true,
     }
   }
   useEffect(() => {
@@ -101,6 +80,7 @@ const CreateGatewayPluginRegistrar = ({
       { governedAccount: form?.governedAccount?.governance, getInstruction },
       index
     )
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- TODO please fix, it can cause difficult bugs. You might wanna check out https://bobbyhadz.com/blog/react-hooks-exhaustive-deps for info. -@asktree
   }, [form])
   const schema = yup.object().shape({
     governedAccount: yup
@@ -110,7 +90,7 @@ const CreateGatewayPluginRegistrar = ({
   })
   const inputs: InstructionInput[] = [
     {
-      label: 'Governance',
+      label: 'Wallet',
       initialValue: null,
       name: 'governedAccount',
       type: InstructionInputType.GOVERNED_ACCOUNT,
@@ -146,28 +126,7 @@ const CreateGatewayPluginRegistrar = ({
           </span>
         </Tooltip>
       ),
-      options: [
-        {
-          name: 'Bot Resistance',
-          value: 'ignREusXmGrscGNUesoU9mxfds9AiYTezUKex2PsZV6',
-        },
-        {
-          name: 'Uniqueness',
-          value: 'uniqobk8oGh4XBLMqM68K8M2zNu3CdYX7q5go7whQiv',
-        },
-        {
-          name: 'ID Verification',
-          value: 'bni1ewus6aMxTxBi5SAfzEmmXLf8KcVFRmTfproJuKw',
-        },
-        {
-          name: 'ID Verification for DeFi',
-          value: 'gatbGF9DvLAw3kWyn1EmH5Nh1Sqp8sTukF7yaQpSc71',
-        },
-        {
-          name: 'Other',
-          value: '',
-        },
-      ],
+      options: availablePasses as any,
     },
     {
       label: 'Other Pass',

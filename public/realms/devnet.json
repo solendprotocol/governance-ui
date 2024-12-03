@@ -18,6 +18,21 @@
     "notificationsEnabled": true
   },
   {
+    "symbol": "SERUM",
+    "displayName": "SerumDAO - Devnet",
+    "programId": "G41fmJzd29v7Qmdi8ZyTBBYa98ghh3cwHBTexqCG1PQJ",
+    "communityMint": "CEdTnJ9Yr2G3zWt8J1hA2XbAAgSPVvxtuE9g44sjtecs",
+    "realmId": "8rTohXsU2L3xaf3KeHiS55DNninzCjDZT8zkpwikHSQt",
+    "ogImage": "https://assets.website-files.com/61284dcff241c2f0729af9f3/61285237ce2e301255d09108_logo-serum.png"
+  },
+  {
+    "symbol": "DAO2DAO",
+    "displayName": "DAO-to-DAO",
+    "programId": "GTesTBiEWE32WHXXE2S4XbZvA5CrEc4xs6ZgRe895dP",
+    "realmId": "3SXQuce59HJMy1udz9UaQJKjWrRw2s6q2rEK1S9Ep7cv",
+    "ogImage": "https://assets.website-files.com/61284dcff241c2f0729af9f3/61285237ce2e301255d09108_logo-serum.png"
+  },
+  {
     "symbol": "SOCEAN",
     "programId": "GSCN8n6XUGqPqoeubY5GM6e3JgtXbzTcpCUREQ1dVXFG",
     "realmId": "4Z6bAwcBkDg8We6rRdnqK9rjsJz3aMqXAZkpoBZ3hxus",
@@ -98,10 +113,10 @@
   },
   {
     "symbol": "MNDE",
-    "displayName": "Marinade DAO",
-    "programId": "GovER5Lthms3bLBqWub97yVrMmEogzX7xNjdXpPPCVZw",
-    "realmId": "Bdow7yGwdvsAjbTFHk5h8jXd7AW3bbMxwxkawNuoVqE3",
-    "ogImage": "https://marinade.finance/static/8665458407ac84338260b729267d0c53/ce52d/marinade-logo.avif",
+    "displayName": "Marinade",
+    "programId": "GovMaiHfpVPw8BAM1mbdzgmSZYDw2tdP32J2fapoQoYs",
+    "realmId": "899YG3yk4F66ZgbNWLHriZHTXSKk9e1kvsKEquW7L6Mo",
+    "ogImage": "/realms/MNDE/img/mnde_logo.png",
     "website": "https://marinade.finance/",
     "twitter": "@marinadefinance"
   },
@@ -164,9 +179,9 @@
   },
   {
     "symbol": "PYTH",
-    "displayName": "Pyth DAO",
-    "programId": "GovER5Lthms3bLBqWub97yVrMmEogzX7xNjdXpPPCVZw",
-    "realmId": "44xGQELUXXD1TiLEMc73RBnCxeW8XKw27LyJNpt2G8bF",
+    "displayName": "Pyth Network",
+    "programId": "pytGY6tWRgGinSCvRLnSv4fHfBTMoiDGiCsesmHWM6U",
+    "realmId": "4ct8XU5tKbMNRphWy4rePsS9kBqPhDdvZoGpmprPaug4",
     "ogImage": "/realms/PYTH/img/pyth.svg",
     "website": "https://pyth.network/",
     "twitter": "@PythNetwork"
@@ -187,5 +202,86 @@
     "website": "https://yellowman.vercel.app/",
     "keywords": "YELLOW MAN",
     "ogImage": "/realms/YMDAO/img/ymdaologo.png"
+  },
+  {
+    "symbol": "MEAN",
+    "displayName": "MEAN DAO",
+    "programId": "MGovW65tDhMMcpEmsegpsdgvzb6zUwGsNjhXFxRAnjd",
+    "realmId": "GkR6JMPU1b2bFj7j9Db8VAmQdisCCqoTQFfzWi2siwcB",
+    "website": "https://www.meanfi.com",
+    "twitter": "@meanfinance",
+    "ogImage": "/realms/MEAN/logo.svg"
+  },
+  {
+    "symbol": "SOLDC",
+    "displayName": "SOLANA DOTA CLUB",
+    "programId": "GovER5Lthms3bLBqWub97yVrMmEogzX7xNjdXpPPCVZw",
+    "realmId": "5aNk7Zig6p3GwQgP4XnxGFg6DgC3jzmM9FURwabjnGTa",
+    "website": "https://soldc.us",
+    "twitter": "https://twitter.com/deniz_safak",
+    "ogImage": "/realms/SOLDCDAO/img/NEWSOLDCDAO.png"
+  },
+  {
+    "symbol": "HNT",
+    "voteSymbol": "veHNT",
+    "allowDiscussion": false,
+    "displayName": "Helium DAO",
+    "programId": "hgovkRU6Ghe1Qoyb54HdSLdqN7VtxaifBzRmh9jtd3S",
+    "realmId": "2VfPJn8ML1hNBnsEBo7SzmG11UJc7gbY8b23A3K8expd",
+    "website": "https://helium.com",
+    "twitter": "@Helium",
+    "ogImage": "/realms/Helium/img/logo.svg",
+    "test": "test test"
+  },
+  {
+    "symbol": "IOT",
+    "voteSymbol": "veIOT",
+    "allowDiscussion": false,
+    "displayName": "Helium IOT SubDAO",
+    "programId": "hgovkRU6Ghe1Qoyb54HdSLdqN7VtxaifBzRmh9jtd3S",
+    "realmId": "8UQNtD5Zw8ijB7ZpGiPLodKXMxtVyQmtu1AEztd3p6Po",
+    "website": "https://helium.com",
+    "twitter": "@Helium",
+    "ogImage": "/realms/Helium/img/iotlogo.png"
+  },
+  {
+    "symbol": "MOBILE",
+    "voteSymbol": "veMOBILE",
+    "allowDiscussion": false,
+    "displayName": "Helium MOBILE SubDAO",
+    "programId": "hgovkRU6Ghe1Qoyb54HdSLdqN7VtxaifBzRmh9jtd3S",
+    "realmId": "8itzNAn1kMZ5sf18dVd8gGykztWZLVT93Svbdt7Gn2NP",
+    "website": "https://helium.com",
+    "twitter": "@Helium",
+    "ogImage": "/realms/Helium/img/mobilelogo.png"
+  },
+  {
+    "symbol": "$GARI",
+    "displayName": "GARI Network DAO",
+    "programId": "GovER5Lthms3bLBqWub97yVrMmEogzX7xNjdXpPPCVZw",
+    "realmId": "HvDndGYjZNMVQDsrdAJJR7DtnQSB5rXM9BJBdwuxiXDg",
+    "ogImage": "/realms/GARI Network DAO/Coin.png",
+    "website": "https://gari.network/",
+    "twitter": "@TheGariNetwork"
+  },
+  {
+    "symbol": "agrippa",
+    "displayName": "agrippa test dao",
+    "programId": "GovER5Lthms3bLBqWub97yVrMmEogzX7xNjdXpPPCVZw",
+    "realmId": "4tvK4JBdTcha81x5jL784sF1aECLbmLT3ScWDZRdz4cd"
+  },
+  {
+    "symbol": "Drift Protocol",
+    "bannerImage": "https://i.imgur.com/b9pPf3S.png",
+    "displayName": "Drift Protocol",
+    "programId": "GovER5Lthms3bLBqWub97yVrMmEogzX7xNjdXpPPCVZw",
+    "realmId": "9nUyxzVL2FUMuWUiVZG66gwK15CJiM3PoLkfrnGfkvt6",
+    "ogImage": "https://i.imgur.com/HnF1Zzy.png",
+    "shortDescription": "A lightning-fast and scalable perpetual futures DEX.",
+    "sortRank": 3,
+    "website": "https://www.drift.trade/",
+    "twitter": "@DriftProtocol",
+    "discord": "http://discord.com/invite/drifting",
+    "github": "https://github.com/drift-labs/protocol-v2"
   }
 ]

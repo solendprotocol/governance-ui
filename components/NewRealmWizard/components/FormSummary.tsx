@@ -76,6 +76,7 @@ function CommunityInfo({
   mintAddress,
   transferMintAuthority,
   mintSupplyFactor,
+  communityAbsoluteMaxVoteWeight,
   yesVotePercentage,
   minimumNumberOfTokensToGovern,
   nftInfo,
@@ -90,7 +91,7 @@ function CommunityInfo({
     <>
       <div>
         <Text level="1" className="mt-6">
-          Community info
+          Community Info
         </Text>
       </div>
       {nftIsCommunityToken ? (
@@ -150,6 +151,13 @@ function CommunityInfo({
             </Text>
           </SummaryModule>
         )}
+        {communityAbsoluteMaxVoteWeight && (
+          <SummaryModule title="Absolute max voter weight">
+            <Text level="0" className="input-base">
+              {communityAbsoluteMaxVoteWeight}
+            </Text>
+          </SummaryModule>
+        )}
       </div>
     </>
   )
@@ -159,7 +167,7 @@ function CouncilInfo({
   tokenInfo,
   mintAddress,
   transferMintAuthority,
-  // yesVotePercentage,
+  yesVotePercentage,
   numberOfMembers,
 }) {
   const updatedTokenInfo = {
@@ -176,16 +184,18 @@ function CouncilInfo({
       </div>
       <TokenInfoSummary title="Council token" {...updatedTokenInfo} />
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {yesVotePercentage !== undefined && (
+          <SummaryModule title="Approval threshold">
+            <Text level="0" className="input-base">
+              {yesVotePercentage}%
+            </Text>
+          </SummaryModule>
+        )}
         <SummaryModule title="Council members">
           <Text level="0" className="input-base">
             {numberOfMembers}
           </Text>
         </SummaryModule>
-        {/* <SummaryModule title="Approval threshold">
-          <Text level="0" className="input-base">
-            {yesVotePercentage}%
-          </Text>
-        </SummaryModule> */}
         {updatedTokenInfo.name !== TO_BE_GENERATED && (
           <SummaryModule title="Transfer mint authority?">
             <Text level="0" className="input-base">
@@ -230,6 +240,16 @@ export default function WizardSummary({
         >
           <Header as="h3">{formData?.name}</Header>
         </SummaryModule>
+        {formData?.isQuadratic && (
+          <SummaryModule title="Voting plugins">
+            <Text level="0" className="input-base">
+              Civic Plugin
+            </Text>
+            <Text level="0" className="input-base">
+              Quadratic Voting Plugin
+            </Text>
+          </SummaryModule>
+        )}
         {type === MULTISIG_FORM ? (
           <div className="grid grid-cols-2 gap-2">
             <SummaryModule title="Invited members">
@@ -250,6 +270,9 @@ export default function WizardSummary({
               tokenInfo={formData.communityTokenInfo}
               transferMintAuthority={formData.transferCommunityMintAuthority}
               mintSupplyFactor={formData.communityMintSupplyFactor}
+              communityAbsoluteMaxVoteWeight={
+                formData.communityAbsoluteMaxVoteWeight
+              }
               yesVotePercentage={formData.communityYesVotePercentage}
               minimumNumberOfTokensToGovern={
                 formData.minimumNumberOfCommunityTokensToGovern
@@ -264,10 +287,7 @@ export default function WizardSummary({
                   formData.transferCouncilMintAuthority ||
                   !formData.useExistingCouncilToken
                 }
-                // yesVotePercentage={
-                //   formData?.councilYesVotePercentage ||
-                //   formData.communityYesVotePercentage
-                // }
+                yesVotePercentage={formData.councilYesVotePercentage}
                 numberOfMembers={formData?.memberAddresses?.length}
               />
             )}
@@ -288,8 +308,10 @@ export default function WizardSummary({
           type === MULTISIG_FORM
             ? 'Create wallet'
             : `Create ${
-                type === COMMUNITY_TOKEN_FORM
+                type === COMMUNITY_TOKEN_FORM && !formData?.isQuadratic
                   ? 'Community Token'
+                  : type === COMMUNITY_TOKEN_FORM && formData?.isQuadratic
+                  ? 'Quadratic Voting'
                   : 'NFT Community'
               } DAO`
         }

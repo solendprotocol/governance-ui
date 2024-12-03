@@ -1,23 +1,22 @@
 import {
   Keypair,
   PublicKey,
-  Transaction,
   TransactionInstruction,
 } from '@solana/web3.js'
 
 import { Proposal } from '@solana/spl-governance'
 import { RpcContext } from '@solana/spl-governance'
 import { ProgramAccount } from '@solana/spl-governance'
-import { sendTransaction } from '../utils/send'
 import { withRelinquishVote } from '@solana/spl-governance'
 import { VotingClient } from '@utils/uiTypes/VotePlugin'
 import { chunks } from '@utils/helpers'
 import {
-  sendTransactionsV2,
+  sendTransactionsV3,
   SequenceType,
-  transactionInstructionsToTypedInstructionsSets,
+  txBatchesToInstructionSetWithSigners,
 } from '@utils/sendTransactions'
-import { NftVoterClient } from '@solana/governance-program-library'
+import { NftVoterClient } from '@utils/uiTypes/NftVoterClient'
+import { HeliumVsrClient } from 'HeliumVotePlugin/sdk/client'
 
 export const relinquishVote = async (
   { connection, wallet, programId, programVersion, walletPubkey }: RpcContext,
@@ -45,40 +44,65 @@ export const relinquishVote = async (
     governanceAuthority,
     beneficiary
   )
-  await plugin.withRelinquishVote(instructions, proposal, voteRecord)
-  const shouldChunk = plugin?.client instanceof NftVoterClient
+
+  await plugin.withRelinquishVote(
+    instructions,
+    proposal,
+    voteRecord,
+    tokenOwnerRecord
+  )
+
+  const shouldChunk =
+    plugin?.client instanceof NftVoterClient ||
+    plugin?.client instanceof HeliumVsrClient
+
   if (shouldChunk) {
     const insertChunks = chunks(instructions, 2)
-    const signerChunks = Array(instructions.length).fill([])
     const instArray = [
-      ...insertChunks
-        .slice(0, 1)
-        .map((x) =>
-          transactionInstructionsToTypedInstructionsSets(
-            x,
-            SequenceType.Sequential
-          )
-        ),
-      ...insertChunks
-        .slice(1, insertChunks.length)
-        .map((x) =>
-          transactionInstructionsToTypedInstructionsSets(
-            x,
-            SequenceType.Parallel
-          )
-        ),
+      ...insertChunks.slice(0, 1).map((txBatch, batchIdx) => {
+        return {
+          instructionsSet: txBatchesToInstructionSetWithSigners(
+            txBatch,
+            [],
+            batchIdx
+          ),
+          sequenceType: SequenceType.Sequential,
+        }
+      }),
+      ...insertChunks.slice(1, insertChunks.length).map((txBatch, batchIdx) => {
+        return {
+          instructionsSet: txBatchesToInstructionSetWithSigners(
+            txBatch,
+            [],
+            batchIdx
+          ),
+          sequenceType: SequenceType.Parallel,
+        }
+      }),
     ]
-    await sendTransactionsV2({
+
+    await sendTransactionsV3({
       connection,
       wallet,
-      TransactionInstructions: instArray,
-      signersSet: [...signerChunks],
-      showUiComponent: true,
+      transactionInstructions: instArray,
     })
   } else {
-    const transaction = new Transaction()
-    transaction.add(...instructions)
+    const txes = [instructions].map((txBatch) => {
+      return {
+        instructionsSet: txBatch.map((x) => {
+          return {
+            transactionInstruction: x,
+            signers: signers,
+          }
+        }),
+        sequenceType: SequenceType.Sequential,
+      }
+    })
 
-    await sendTransaction({ transaction, wallet, connection, signers })
+    await sendTransactionsV3({
+      connection,
+      wallet,
+      transactionInstructions: txes,
+    })
   }
 }

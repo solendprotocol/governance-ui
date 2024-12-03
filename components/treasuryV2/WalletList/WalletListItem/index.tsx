@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import { useMemo, useState } from 'react'
 import cx from 'classnames'
 
 import { Asset } from '@models/treasury/Asset'
@@ -6,6 +6,7 @@ import { Wallet } from '@models/treasury/Wallet'
 
 import AssetList, { Section } from './AssetList'
 import SummaryButton from './SummaryButton'
+import { PublicKey } from '@metaplex-foundation/js'
 
 interface Props {
   className?: string
@@ -21,6 +22,11 @@ interface Props {
 export default function WalletListItem(props: Props) {
   const [expandedSections, setExpandedSections] = useState<Section[]>([])
   const isOpen = props.expanded
+
+  const governance = useMemo(
+    () => new PublicKey(props.wallet.governanceAddress!), // @asktree: I have no idea why this would ever be undefined ?
+    [props.wallet.governanceAddress]
+  )
 
   return (
     <div
@@ -70,6 +76,7 @@ export default function WalletListItem(props: Props) {
       {isOpen && (
         <div className="p-2">
           <AssetList
+            governance={governance}
             assets={props.wallet.assets}
             className="pt-4"
             expandedSections={expandedSections}

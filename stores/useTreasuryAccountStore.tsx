@@ -1,91 +1,34 @@
 import create, { State } from 'zustand'
-import { getNfts } from '@utils/tokens'
-import tokenService from '@utils/services/token'
-import { ConfirmedSignatureInfo, PublicKey } from '@solana/web3.js'
+import tokenPriceService, {
+  TokenInfoWithoutDecimals,
+} from '@utils/services/tokenPrice'
+import { ConfirmedSignatureInfo } from '@solana/web3.js'
 import { notify } from '@utils/notifications'
-import { NFTWithMint } from '@utils/uiTypes/nfts'
-import { TokenInfo } from '@solana/spl-token-registry'
 import { WSOL_MINT } from '@components/instructions/tools'
 import { AccountType, AssetAccount } from '@utils/uiTypes/assets'
-import { ConnectionContext } from '@utils/connection'
 
 interface TreasuryAccountStore extends State {
   currentAccount: AssetAccount | null
   mintAddress: string
-  tokenInfo?: TokenInfo
+  tokenInfo?: TokenInfoWithoutDecimals
   recentActivity: ConfirmedSignatureInfo[]
 
-  allNfts: NFTWithMint[]
-  governanceNfts: {
-    [governance: string]: NFTWithMint[]
-  }
-  isLoadingNfts: boolean
   isLoadingRecentActivity: boolean
   isLoadingTokenAccounts: boolean
   setCurrentAccount: (account: AssetAccount, connection) => void
   handleFetchRecentActivity: (account: AssetAccount, connection) => void
-  getNfts: (
-    nftsGovernedTokenAccounts: AssetAccount[],
-    connection: ConnectionContext
-  ) => void
 }
 
+/**
+ * @deprecated
+ */
 const useTreasuryAccountStore = create<TreasuryAccountStore>((set, _get) => ({
   currentAccount: null,
   mintAddress: '',
   tokenInfo: undefined,
   recentActivity: [],
-  allNfts: [],
-  governanceNfts: {},
-  isLoadingNfts: false,
   isLoadingRecentActivity: false,
   isLoadingTokenAccounts: false,
-  getNfts: async (nftsGovernedTokenAccounts, connection) => {
-    set((s) => {
-      s.isLoadingNfts = true
-    })
-    let realmNfts: NFTWithMint[] = []
-    const nftsPerPubkey = {}
-    for (const acc of nftsGovernedTokenAccounts) {
-      const governance = acc.governance.pubkey.toBase58()
-      try {
-        const nfts = acc.governance.pubkey
-          ? await getNfts(acc.governance.pubkey, connection)
-          : []
-        if (acc.isSol) {
-          const solAccountNfts = acc.extensions.transferAddress
-            ? await getNfts(
-                new PublicKey(acc.extensions.transferAddress!),
-                connection
-              )
-            : []
-          realmNfts = [...realmNfts, ...solAccountNfts]
-
-          nftsPerPubkey[acc.extensions.transferAddress!.toBase58()] = [
-            ...solAccountNfts,
-          ]
-        }
-        realmNfts = [...realmNfts, ...nfts]
-        if (governance) {
-          if (nftsPerPubkey[governance]) {
-            nftsPerPubkey[governance] = [...nftsPerPubkey[governance], ...nfts]
-          } else {
-            nftsPerPubkey[governance] = [...nfts]
-          }
-        }
-      } catch (e) {
-        console.log(e)
-        notify({
-          message: `Unable to fetch nfts for governance ${governance}`,
-        })
-      }
-    }
-    set((s) => {
-      s.allNfts = realmNfts
-      s.governanceNfts = nftsPerPubkey
-      s.isLoadingNfts = false
-    })
-  },
   setCurrentAccount: async (account, connection) => {
     if (!account) {
       set((s) => {
@@ -103,7 +46,7 @@ const useTreasuryAccountStore = create<TreasuryAccountStore>((set, _get) => ({
     if (account.type === AccountType.SOL) {
       mintAddress = WSOL_MINT
     }
-    const tokenInfo = tokenService.getTokenInfo(mintAddress)
+    const tokenInfo = tokenPriceService.getTokenInfo(mintAddress)
     set((s) => {
       s.currentAccount = account
       s.mintAddress = mintAddress

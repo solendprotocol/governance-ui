@@ -1,6 +1,6 @@
 import { PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY } from '@solana/web3.js'
 
-import { BN } from '@project-serum/anchor'
+import { BN } from '@coral-xyz/anchor'
 import {
   getRegistrarPDA,
   getVoterPDA,
@@ -46,17 +46,17 @@ export const getGrantInstruction = async ({
   const systemProgram = SystemProgram.programId
   const clientProgramId = client!.program.programId
 
-  const { registrar } = await getRegistrarPDA(
+  const { registrar } = getRegistrarPDA(
     realmPk,
     communityMintPk,
     clientProgramId
   )
-  const { voter, voterBump } = await getVoterPDA(
+  const { voter, voterBump } = getVoterPDA(
     registrar,
     toPk,
     clientProgramId
   )
-  const { voterWeightPk, voterWeightBump } = await getVoterWeightPDA(
+  const { voterWeightPk, voterWeightBump } = getVoterWeightPDA(
     registrar,
     toPk,
     clientProgramId
@@ -73,7 +73,7 @@ export const getGrantInstruction = async ({
     .grant(
       voterBump,
       voterWeightBump,
-      { [lockupKind]: {} },
+      { [lockupKind]: {} } as any, // The cast to any works around an anchor issue with interpreting enums
       new BN(startTime),
       lockupPeriod,
       allowClawback,

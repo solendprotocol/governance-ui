@@ -1,4 +1,4 @@
-import { BN } from '@project-serum/anchor'
+import { BN } from '@coral-xyz/anchor'
 import { MintInfo } from '@solana/spl-token'
 import { PublicKey } from '@solana/web3.js'
 import { TokenProgramAccount } from '@utils/tokens'
@@ -10,7 +10,7 @@ export interface Voter {
   //there are more fields but no use for them on ui yet
 }
 
-export interface votingMint {
+interface VotingMint {
   baselineVoteWeightScaledFactor: BN
   digitShift: number
   grantAuthority: PublicKey
@@ -19,13 +19,13 @@ export interface votingMint {
   mint: PublicKey
 }
 
-export type LockupType = 'none' | 'monthly' | 'cliff' | 'constant' | 'daily' //there is also daily type but not used on ui yet
+export type LockupType = 'none' | 'monthly' | 'cliff' | 'constant' | 'daily'
 export interface Registrar {
   governanceProgramId: PublicKey
   realm: PublicKey
   realmAuthority: PublicKey
   realmGoverningTokenMint: PublicKey
-  votingMints: votingMint[]
+  votingMints: VotingMint[]
   //there are more fields but no use for them on ui yet
 }
 interface LockupKind {
@@ -35,11 +35,13 @@ interface LockupKind {
   cliff: object
   constant: object
 }
+
 interface Lockup {
   endTs: BN
   kind: LockupKind
   startTs: BN
 }
+
 export interface Deposit {
   allowClawback: boolean
   amountDepositedNative: BN
@@ -61,12 +63,12 @@ export interface DepositWithMintAccount extends Deposit {
 
 export const emptyPk = '11111111111111111111111111111111'
 
-export const getRegistrarPDA = async (
+export const getRegistrarPDA = (
   realmPk: PublicKey,
   mint: PublicKey,
   clientProgramId: PublicKey
 ) => {
-  const [registrar, registrarBump] = await PublicKey.findProgramAddress(
+  const [registrar, registrarBump] = PublicKey.findProgramAddressSync(
     [realmPk.toBuffer(), Buffer.from('registrar'), mint.toBuffer()],
     clientProgramId
   )
@@ -76,12 +78,12 @@ export const getRegistrarPDA = async (
   }
 }
 
-export const getVoterPDA = async (
+export const getVoterPDA = (
   registrar: PublicKey,
   walletPk: PublicKey,
   clientProgramId: PublicKey
 ) => {
-  const [voter, voterBump] = await PublicKey.findProgramAddress(
+  const [voter, voterBump] = PublicKey.findProgramAddressSync(
     [registrar.toBuffer(), Buffer.from('voter'), walletPk.toBuffer()],
     clientProgramId
   )
@@ -92,12 +94,12 @@ export const getVoterPDA = async (
   }
 }
 
-export const getVoterWeightPDA = async (
+export const getVoterWeightPDA = (
   registrar: PublicKey,
   walletPk: PublicKey,
   clientProgramId: PublicKey
 ) => {
-  const [voterWeightPk, voterWeightBump] = await PublicKey.findProgramAddress(
+  const [voterWeightPk, voterWeightBump] = PublicKey.findProgramAddressSync(
     [
       registrar.toBuffer(),
       Buffer.from('voter-weight-record'),

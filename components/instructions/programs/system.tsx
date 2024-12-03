@@ -1,4 +1,4 @@
-import { BN } from '@project-serum/anchor'
+import { BN } from '@coral-xyz/anchor'
 import { Connection, PublicKey } from '@solana/web3.js'
 import { getMintDecimalAmountFromNatural } from '@tools/sdk/units'
 import { tryGetMint } from '@utils/tokens'
@@ -63,6 +63,17 @@ export const SYSTEM_INSTRUCTIONS = {
         _accounts: AccountMetaData[]
       ) => {
         return <p>No Instruction data</p>
+      },
+    },
+    9: {
+      name: 'System Program - Allocate',
+      accounts: [],
+      getDataUI: (
+        _connection: Connection,
+        _data: Uint8Array,
+        _accounts: AccountMetaData[]
+      ) => {
+        return <p></p>
       },
     },
   },

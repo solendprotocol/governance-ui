@@ -1,25 +1,46 @@
-import { NftVoterClient } from '@solana/governance-program-library'
+import { NftVoterClient } from '@utils/uiTypes/NftVoterClient'
 import { PublicKey } from '@solana/web3.js'
+import { HeliumVsrClient } from 'HeliumVotePlugin/sdk/client'
 import { Registrar, Voter } from './accounts'
 import { VsrClient } from './client'
 
-export const tryGetVoter = async (voterPk: PublicKey, client: VsrClient) => {
+export const tryGetVoter = async (
+  voterPk: PublicKey,
+  client: Pick<VsrClient, 'program'>
+) => {
   try {
     const voter = await client?.program.account.voter.fetch(voterPk)
-    return voter as Voter
+    // The cast to any works around an anchor issue with interpreting enums
+    return voter as unknown as Voter
   } catch (e) {
     return null
   }
 }
+
 export const tryGetRegistrar = async (
   registrarPk: PublicKey,
-  client: VsrClient
+  client: Pick<VsrClient, 'program'>
 ) => {
   try {
     const existingRegistrar = await client.program.account.registrar.fetch(
       registrarPk
     )
     return existingRegistrar as Registrar
+  } catch (e) {
+    return null
+  }
+}
+
+export const tryGetHeliumRegistrar = async (
+  registrarPk: PublicKey,
+  client: HeliumVsrClient
+) => {
+  try {
+    const existingRegistrar = await client.program.account.registrar.fetch(
+      registrarPk
+    )
+
+    return existingRegistrar
   } catch (e) {
     return null
   }

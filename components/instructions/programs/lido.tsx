@@ -1,4 +1,4 @@
-import { BN } from '@project-serum/anchor'
+import { BN } from '@coral-xyz/anchor'
 import { Connection, PublicKey } from '@solana/web3.js'
 import { getMintDecimalAmountFromNatural } from '@tools/sdk/units'
 import { tryGetMint } from '@utils/tokens'
@@ -7,7 +7,7 @@ import BufferLayout from 'buffer-layout'
 import {
   LIDO_PROGRAM_ID,
   LIDO_PROGRAM_ID_DEVNET,
-} from '@components/TreasuryAccount/ConvertToStSol'
+} from '@constants/pubkeys/lido'
 
 const INSTRUCTIONS = {
   1: {

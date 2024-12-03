@@ -15,24 +15,30 @@ import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
   Token,
   TOKEN_PROGRAM_ID,
+  MintInfo,
 } from '@solana/spl-token'
 import { Connection } from '@solana/web3.js'
-import { BN } from '@project-serum/anchor'
+import { BN } from '@coral-xyz/anchor'
 import {
-  nftPluginsPks,
-  vsrPluginsPks,
-  gatewayPluginsPks,
-} from '@hooks/useVotingPlugins'
+  NFT_PLUGINS_PKS,
+  VSR_PLUGIN_PKS,
+  HELIUM_VSR_PLUGINS_PKS,
+  GATEWAY_PLUGINS_PKS,
+  QV_PLUGINS_PKS,
+} from '@constants/plugins'
 import { AssetAccount } from '@utils/uiTypes/assets'
+import { validatePubkey } from './formValidation'
 
 // Plugins supported by Realms
 const supportedPlugins = [
-  ...nftPluginsPks,
-  ...vsrPluginsPks,
-  ...gatewayPluginsPks,
+  ...NFT_PLUGINS_PKS,
+  ...VSR_PLUGIN_PKS,
+  ...HELIUM_VSR_PLUGINS_PKS,
+  ...GATEWAY_PLUGINS_PKS,
+  ...QV_PLUGINS_PKS
 ]
 
-export const getValidateAccount = async (
+const getValidateAccount = async (
   connection: Connection,
   pubKey: PublicKey
 ) => {
@@ -53,7 +59,7 @@ export const getValidatedPublickKey = (val: string) => {
   }
 }
 
-export const validateDoseTokenAccountMatchMint = (
+const validateDoseTokenAccountMatchMint = (
   tokenAccount: AccountInfo,
   mint: PublicKey
 ) => {
@@ -90,7 +96,7 @@ export const isExistingTokenAccount = async (
   return isExistingTokenAccount
 }
 
-export const validateDestinationAccAddress = async (
+const validateDestinationAccAddress = async (
   connection: ConnectionContext,
   val: any,
   governedAccount?: PublicKey
@@ -118,7 +124,7 @@ export const validateDestinationAccAddress = async (
   return true
 }
 
-export const validateDestinationAccAddressWithMint = async (
+const validateDestinationAccAddressWithMint = async (
   connection: ConnectionContext,
   val: any,
   mintPubKey: PublicKey
@@ -187,35 +193,40 @@ export const validateBuffer = async (
       let buffer: ProgramBufferAccount
 
       try {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         buffer = create(info.data.parsed, ProgramBufferAccount)
       } catch {
         throw 'Invalid program buffer account'
       }
-
+      /* 
       if (buffer.info.authority?.toBase58() !== governedAccount.toBase58()) {
         throw `Buffer authority must be set to governance account 
               ${governedAccount.toBase58()}`
-      }
+      } */
     })
   } else {
     throw 'Provided value is not a valid account address'
   }
 }
 
-export const getFriktionDepositSchema = ({ form }) => {
-  const governedTokenAccount = form.governedTokenAccount as AssetAccount
+export const getMeanCreateAccountSchema = ({ form }) => {
+  const governedTokenAccount = form.governedTokenAccount as
+    | AssetAccount
+    | undefined
+
   return yup.object().shape({
-    governedTokenAccount: yup.object().required('Source account is required'),
+    governedTokenAccount: yup.object().required('Source of funds is required'),
+    label: yup.string().required('Name is required'),
     amount: yup
       .number()
       .typeError('Amount is required')
       .test(
         'amount',
-        'Transfer amount must be less than the source account available amount',
+        'Transfer amount must be less than the source of funds available amount',
         async function (val: number) {
           if (val && !form.governedTokenAccount) {
             return this.createError({
-              message: `Please select source account to validate the amount`,
+              message: `Please select source of funds to validate the amount`,
             })
           }
           if (
@@ -244,81 +255,26 @@ export const getFriktionDepositSchema = ({ form }) => {
   })
 }
 
-export const getCastleDepositSchema = ({ form }) => {
-  const governedTokenAccount = form.governedTokenAccount as AssetAccount
+export const getMeanFundAccountSchema = ({ form }) => {
+  const governedTokenAccount = form.governedTokenAccount as
+    | AssetAccount
+    | undefined
+
   return yup.object().shape({
-    governedTokenAccount: yup.object().required('Source account is required'),
+    governedTokenAccount: yup.object().required('Source of funds is required'),
+    paymentStreamingAccount: yup
+      .object()
+      .required('Streaming account destination is required'),
     amount: yup
       .number()
       .typeError('Amount is required')
       .test(
         'amount',
-        'Transfer amount must be less than the source account available amount',
-        async function (val: number) {
-          const isNft = governedTokenAccount?.isNft
-          if (isNft) {
-            return true
-          }
-          if (val && !form.governedTokenAccount) {
-            return this.createError({
-              message: `Please select source account to validate the amount`,
-            })
-          }
-          if (
-            val &&
-            governedTokenAccount &&
-            governedTokenAccount?.extensions.mint
-          ) {
-            const mintValue = getMintNaturalAmountFromDecimalAsBN(
-              val,
-              governedTokenAccount?.extensions.mint.account.decimals
-            )
-            return !!(governedTokenAccount?.extensions.token?.publicKey &&
-            !governedTokenAccount.isSol
-              ? governedTokenAccount.extensions.token.account.amount.gte(
-                  mintValue
-                )
-              : new BN(
-                  governedTokenAccount.extensions.solAccount!.lamports
-                ).gte(mintValue))
-          }
-          return this.createError({
-            message: `Amount is required`,
-          })
-        }
-      ),
-  })
-}
-
-export const getCastleWithdrawSchema = () => {
-  return yup.object().shape({
-    governedTokenAccount: yup.object().required('Source account is required'),
-    amount: yup.number().typeError('Amount is required'),
-  })
-}
-
-export const getFriktionWithdrawSchema = () => {
-  return yup.object().shape({
-    governedTokenAccount: yup.object().required('Source account is required'),
-    amount: yup.number().typeError('Amount is required'),
-  })
-}
-
-export const getGoblinGoldDepositSchema = ({ form }) => {
-  const governedTokenAccount = form.governedTokenAccount as AssetAccount
-  return yup.object().shape({
-    governedTokenAccount: yup.object().required('Source account is required'),
-    goblinGoldVaultId: yup.string().required('Vault ID is required'),
-    amount: yup
-      .number()
-      .typeError('Amount is required')
-      .test(
-        'amount',
-        'Transfer amount must be less than the source account available amount',
+        'Transfer amount must be less than the source of funds available amount',
         async function (val: number) {
           if (val && !form.governedTokenAccount) {
             return this.createError({
-              message: `Please select source account to validate the amount`,
+              message: `Please select source of funds to validate the amount`,
             })
           }
           if (
@@ -346,24 +302,582 @@ export const getGoblinGoldDepositSchema = ({ form }) => {
       ),
   })
 }
-
-export const getGoblinGoldWithdrawSchema = () => {
+export const getMeanWithdrawFromAccountSchema = ({
+  form,
+  connection,
+  mintInfo,
+}: {
+  form: any
+  connection: ConnectionContext
+  mintInfo?: MintInfo
+}) => {
   return yup.object().shape({
-    governedTokenAccount: yup.object().required('Source account is required'),
-    goblinGoldVaultId: yup.string().required('Vault ID is required'),
-    amount: yup.number().typeError('Amount is required'),
+    governedTokenAccount: yup.object().required('Governance is required'),
+    paymentStreamingAccount: yup
+      .object()
+      .required('Streaming account source is required'),
+
+    destination: yup
+      .string()
+      .test(
+        'destination',
+        'Account validation error',
+        async function (val: string) {
+          if (val) {
+            try {
+              if (form.paymentStreamingAccount?.id.toString() == val) {
+                return this.createError({
+                  message: `Destination account address can't be same as source account`,
+                })
+              }
+              await validateDestinationAccAddress(
+                connection,
+                val,
+                new PublicKey(form.paymentStreamingAccount?.id)
+              )
+              return true
+            } catch (e) {
+              console.log(e)
+              return this.createError({
+                message: `${e}`,
+              })
+            }
+          } else {
+            return this.createError({
+              message: `Destination account is required`,
+            })
+          }
+        }
+      ),
+    amount: yup
+      .number()
+      .typeError('Amount is required')
+      .test(
+        'amount',
+        'Transfer amount must be less than the source of funds available amount',
+        async function (val: number) {
+          if (val && !form.paymentStreamingAccount) {
+            return this.createError({
+              message: `Please select source of funds to validate the amount`,
+            })
+          }
+          if (val && form.paymentStreamingAccount && mintInfo) {
+            const mintValue = getMintNaturalAmountFromDecimalAsBN(
+              val,
+              mintInfo.decimals
+            )
+            return new BN(form.paymentStreamingAccount.balance).gte(mintValue)
+          }
+          return this.createError({
+            message: `Amount is required`,
+          })
+        }
+      ),
   })
 }
 
-export const getFriktionClaimPendingDepositSchema = () => {
+export const getMeanCreateStreamSchema = ({
+  form,
+  connection,
+  mintInfo,
+}: {
+  form: any
+  connection: ConnectionContext
+  mintInfo?: MintInfo
+}) => {
   return yup.object().shape({
-    governedTokenAccount: yup.object().required('Source account is required'),
+    governedTokenAccount: yup.object().required('Governance is required'),
+    paymentStreamingAccount: yup
+      .object()
+      .required('Streaming account source is required'),
+    streamName: yup.string().required('Stream name is required'),
+    destination: yup
+      .string()
+      .test(
+        'destination',
+        'Account validation error',
+        async function (val: string) {
+          if (val) {
+            try {
+              if (form.paymentStreamingAccount?.id.toString() == val) {
+                return this.createError({
+                  message: `Destination account address can't be same as source account`,
+                })
+              }
+              await validateDestinationAccAddress(
+                connection,
+                val,
+                new PublicKey(form.paymentStreamingAccount?.id)
+              )
+              return true
+            } catch (e) {
+              console.log(e)
+              return this.createError({
+                message: `${e}`,
+              })
+            }
+          } else {
+            return this.createError({
+              message: `Destination account is required`,
+            })
+          }
+        }
+      ),
+    allocationAssigned: yup
+      .number()
+      .typeError('Amount is required')
+      .test(
+        'amount',
+        'Transfer amount must be less than the source of funds available amount',
+        async function (val: number) {
+          if (val && !form.paymentStreamingAccount) {
+            return this.createError({
+              message: `Please select source of funds to validate the amount`,
+            })
+          }
+          if (val && form.paymentStreamingAccount && mintInfo) {
+            const mintValue = getMintNaturalAmountFromDecimalAsBN(
+              val,
+              mintInfo.decimals
+            )
+            return new BN(form.paymentStreamingAccount.balance).gte(mintValue)
+          }
+          return this.createError({
+            message: `Amount is required`,
+          })
+        }
+      ),
+    rateAmount: yup.number().required('Rate amount is required'),
   })
 }
 
-export const getFriktionClaimPendingWithdrawSchema = () => {
+export const getMeanTransferStreamSchema = () => {
   return yup.object().shape({
-    governedTokenAccount: yup.object().required('Source account is required'),
+    governedTokenAccount: yup.object().required('Governance is required'),
+    stream: yup.object().required('Stream source is required'),
+    destination: yup.string().required('New stream owner is required'),
+  })
+}
+
+export const getDualFinanceGovernanceAirdropSchema = ({
+  form,
+}: {
+  form: any
+}) => {
+  return yup.object().shape({
+    amountPerVoter: yup
+      .number()
+      .typeError('Amount per voter is required')
+      .test('amountPerVoter', 'amountPerVoter', async function (val: number) {
+        if (val > form.amount) {
+          return this.createError({
+            message: `Amount per voter cannot be more than total`,
+          })
+        }
+        return true
+      }),
+    eligibilityStart: yup
+      .number()
+      .typeError('Eligibility start is required')
+      .test(
+        'eligibilityStart',
+        'EligibilityStart must be a reasonable unix seconds timestamp',
+        function (val: number) {
+          // 01/01/2020
+          // Primary goal is to catch users inputting ms instead of sec.
+          if (val < 1577854800 || val > 1577854800 * 10) {
+            return this.createError({
+              message: `Please select a valid unix seconds timestamp`,
+            })
+          }
+          return true
+        }
+      ),
+    eligibilityEnd: yup
+      .number()
+      .typeError('Eligibility end is required')
+      .test(
+        'eligibilityEnd',
+        'EligibilityEnd must be a reasonable unix seconds timestamp',
+        function (val: number) {
+          // 01/01/2020
+          // Primary goal is to catch users inputting ms instead of sec.
+          if (val < 1577854800 || val > 1577854800 * 10) {
+            return this.createError({
+              message: `Please select a valid unix seconds timestamp`,
+            })
+          }
+          return true
+        }
+      ),
+    treasury: yup.object().typeError('Treasury is required'),
+    amount: yup
+      .string()
+      .typeError('Amount is required')
+      .test('amount', 'amount', async function (val: string) {
+        if (!form.treasury) {
+          return this.createError({
+            message: `Please select a treasury`,
+          })
+        }
+        const numAtomsInTreasury = new BN(
+          form.treasury.extensions.token.account.amount
+        )
+        if (numAtomsInTreasury.lt(new BN(val))) {
+          return this.createError({
+            message: `Not enough tokens`,
+          })
+        }
+        return true
+      }),
+  })
+}
+
+export const getDualFinanceMerkleAirdropSchema = ({ form }: { form: any }) => {
+  return yup.object().shape({
+    root: yup
+      .string()
+      .required('Root is required')
+      .test(
+        'destination',
+        'Account validation error',
+        async function (val: string) {
+          if (val) {
+            try {
+              const arr = Uint8Array.from(Buffer.from(val, 'hex'))
+              if (arr.length !== 32) {
+                return this.createError({
+                  message: 'Expected 32 bytes',
+                })
+              }
+              return true
+            } catch (e) {
+              console.log(e)
+            }
+            try {
+              const root = val.split(',').map(function (item) {
+                return parseInt(item, 10)
+              })
+              if (root.length !== 32) {
+                return this.createError({
+                  message: 'Expected 32 bytes',
+                })
+              }
+              for (const byte of root) {
+                if (byte < 0 || byte >= 256) {
+                  return this.createError({
+                    message: 'Invalid byte',
+                  })
+                }
+              }
+              return true
+            } catch (e) {
+              console.log(e)
+            }
+            return this.createError({
+              message: `Could not parse`,
+            })
+          } else {
+            return this.createError({
+              message: `Root is required`,
+            })
+          }
+        }
+      ),
+    treasury: yup.object().typeError('Treasury is required'),
+    amount: yup
+      .string()
+      .typeError('Amount is required')
+      .test('amount', 'amount', async function (val: string) {
+        if (!form.treasury) {
+          return this.createError({
+            message: `Please select a treasury`,
+          })
+        }
+        const numAtomsInTreasury = new BN(
+          form.treasury.extensions.token.account.amount
+        )
+        if (numAtomsInTreasury.lt(new BN(val))) {
+          return this.createError({
+            message: `Not enough tokens`,
+          })
+        }
+        return true
+      }),
+  })
+}
+
+export const getDualFinanceLiquidityStakingOptionSchema = ({
+  form,
+}: {
+  form: any
+}) => {
+  return yup.object().shape({
+    optionExpirationUnixSeconds: yup
+      .number()
+      .typeError('Expiration is required')
+      .test(
+        'expiration',
+        'Expiration must be a future unix seconds timestamp',
+        function (val: number) {
+          const nowUnixMs = Date.now() / 1_000
+          // Primary goal is to catch users inputting ms instead of sec.
+          if (val > nowUnixMs * 10) {
+            return this.createError({
+              message: `Please select a valid unix seconds timestamp`,
+            })
+          }
+          if (val < nowUnixMs) {
+            return this.createError({
+              message: `Please select a time in the future`,
+            })
+          }
+          return true
+        }
+      ),
+    numTokens: yup
+      .string()
+      .typeError('Num tokens is required')
+      .test('amount', 'amount', async function (val: string) {
+        if (!form.baseTreasury) {
+          return this.createError({
+            message: `Please select a treasury`,
+          })
+        }
+        const numAtomsInTreasury = new BN(
+          form.baseTreasury.extensions.token.account.amount
+        )
+        if (numAtomsInTreasury.lt(new BN(val))) {
+          return this.createError({
+            message: `Not enough tokens`,
+          })
+        }
+        return true
+      }),
+    lotSize: yup.number().typeError('lotSize is required'),
+    baseTreasury: yup.object().typeError('baseTreasury is required'),
+    quoteTreasury: yup.object().typeError('quoteTreasury is required'),
+    payer: yup.object().typeError('payer is required'),
+  })
+}
+
+export const getDualFinanceStakingOptionSchema = ({
+  form,
+  connection,
+}: {
+  form: any
+  connection: any
+}) => {
+  return yup.object().shape({
+    soName: yup
+      .string()
+      .required('Staking option name is required')
+      .test(
+        'is-not-too-long',
+        'soName too long',
+        (value) => value !== undefined && value.length < 32
+      ),
+    userPk: yup
+      .string()
+      .test(
+        'is-valid-address1',
+        'Please enter a valid PublicKey',
+        async function (userPk: string) {
+          if (!userPk || !validatePubkey(userPk)) {
+            return false
+          }
+
+          const pubKey = getValidatedPublickKey(userPk)
+          const account = await getValidateAccount(connection.current, pubKey)
+          if (!account) {
+            return false
+          }
+          return true
+        }
+      ),
+    optionExpirationUnixSeconds: yup
+      .number()
+      .typeError('Expiration is required')
+      .test(
+        'expiration',
+        'Expiration must be a future unix seconds timestamp',
+        function (val: number) {
+          const nowUnixMs = Date.now() / 1_000
+          // Primary goal is to catch users inputting ms instead of sec.
+          if (val > nowUnixMs * 10) {
+            return this.createError({
+              message: `Please select a valid unix seconds timestamp`,
+            })
+          }
+          if (val < nowUnixMs) {
+            return this.createError({
+              message: `Please select a time in the future`,
+            })
+          }
+          return true
+        }
+      ),
+    numTokens: yup
+      .string()
+      .typeError('Num tokens is required')
+      .test('amount', 'amount', async function (val: string) {
+        if (!form.baseTreasury) {
+          return this.createError({
+            message: `Please select a treasury`,
+          })
+        }
+        const numAtomsInTreasury = new BN(
+          form.baseTreasury.extensions.token.account.amount
+        )
+        if (numAtomsInTreasury.lt(new BN(val))) {
+          return this.createError({
+            message: `Not enough tokens`,
+          })
+        }
+        return true
+      }),
+    strike: yup.number().typeError('Strike is required'),
+    lotSize: yup.number().typeError('lotSize is required'),
+    baseTreasury: yup.object().typeError('baseTreasury is required'),
+    quoteTreasury: yup.object().typeError('quoteTreasury is required'),
+    payer: yup.object().typeError('payer is required'),
+  })
+}
+
+export const getDualFinanceGsoSchema = ({ form }: { form: any }) => {
+  return yup.object().shape({
+    soName: yup
+      .string()
+      .required('Staking option name is required')
+      .test(
+        'is-not-too-long',
+        'soName too long',
+        (value) => value !== undefined && value.length < 32
+      ),
+    optionExpirationUnixSeconds: yup
+      .number()
+      .typeError('Expiration is required')
+      .test(
+        'expiration',
+        'Expiration must be a future unix seconds timestamp',
+        function (val: number) {
+          const nowUnixMs = Date.now() / 1_000
+          // Primary goal is to catch users inputting ms instead of sec.
+          if (val > nowUnixMs * 10) {
+            return this.createError({
+              message: `Please select a valid unix seconds timestamp`,
+            })
+          }
+          if (val < nowUnixMs) {
+            return this.createError({
+              message: `Please select a time in the future`,
+            })
+          }
+          return true
+        }
+      ),
+    numTokens: yup
+      .string()
+      .typeError('Num tokens is required')
+      .test('amount', 'amount', async function (val: string) {
+        if (!form.baseTreasury) {
+          return this.createError({
+            message: `Please select a treasury`,
+          })
+        }
+        const numAtomsInTreasury = new BN(
+          form.baseTreasury.extensions.token.account.amount
+        )
+        if (numAtomsInTreasury.lt(new BN(val))) {
+          return this.createError({
+            message: `Not enough tokens`,
+          })
+        }
+        return true
+      }),
+    strike: yup.number().typeError('strike is required'),
+    lotSize: yup.number().typeError('lotSize is required'),
+    baseTreasury: yup.object().typeError('baseTreasury is required'),
+    quoteTreasury: yup.object().typeError('quoteTreasury is required'),
+    payer: yup.object().typeError('payer is required'),
+    subscriptionPeriodEnd: yup
+      .number()
+      .typeError('subscriptionPeriodEnd is required'),
+    lockupRatio: yup.number().typeError('lockupRatio is required'),
+  })
+}
+
+export const getDualFinanceInitStrikeSchema = () => {
+  return yup.object().shape({
+    soName: yup.string().required('Staking option name is required'),
+    // TODO: Verify it is comma separated ints
+    strikes: yup.string().typeError('Strike is required'),
+    payer: yup.object().typeError('payer is required'),
+    baseTreasury: yup.object().typeError('baseTreasury is required'),
+  })
+}
+
+export const getDualFinanceExerciseSchema = () => {
+  return yup.object().shape({
+    soName: yup.string().required('Staking option name is required'),
+    optionAccount: yup.object().required('Option account is required'),
+    numTokens: yup.number().typeError('Num tokens is required'),
+    baseTreasury: yup.object().typeError('baseTreasury is required'),
+    quoteTreasury: yup.object().typeError('quoteTreasury is required'),
+  })
+}
+
+export const getDualFinanceWithdrawSchema = () => {
+  return yup.object().shape({
+    soName: yup.string().required('Staking option name is required'),
+    baseTreasury: yup.object().typeError('baseTreasury is required'),
+    mintPk: yup
+      .string()
+      .test('is-valid-address1', 'Please enter a valid PublicKey', (value) =>
+        value ? validatePubkey(value) : true
+      ),
+  })
+}
+
+export const getDualFinanceGsoWithdrawSchema = () => {
+  return yup.object().shape({
+    soName: yup.string().required('Staking option name is required'),
+    baseTreasury: yup.object().typeError('baseTreasury is required'),
+  })
+}
+
+export const getDualFinanceDelegateSchema = () => {
+  return yup.object().shape({
+    delegateAccount: yup
+      .string()
+      .test('is-valid-address1', 'Please enter a valid PublicKey', (value) =>
+        value ? validatePubkey(value) : true
+      ),
+    realm: yup
+      .string()
+      .test('is-valid-address1', 'Please enter a valid PublicKey', (value) =>
+        value ? validatePubkey(value) : true
+      ),
+    token: yup.object().typeError('Delegate Token is required'),
+  })
+}
+
+export const getDualFinanceDelegateWithdrawSchema = () => {
+  return yup.object().shape({
+    realm: yup
+      .string()
+      .test('is-valid-address1', 'Please enter a valid PublicKey', (value) =>
+        value ? validatePubkey(value) : true
+      ),
+    token: yup.object().typeError('Delegate Token is required'),
+  })
+}
+
+export const getDualFinanceVoteDepositSchema = () => {
+  return yup.object().shape({
+    numTokens: yup.number().typeError('Num tokens is required'),
+    realm: yup.string(),
+    token: yup.object().typeError('Delegate Token is required'),
   })
 }
 
@@ -373,12 +887,14 @@ export const getTokenTransferSchema = ({
   tokenAmount,
   mintDecimals,
   nftMode,
+  ignoreAmount,
 }: {
   form: any
   connection: ConnectionContext
   tokenAmount?: BN
   mintDecimals?: number
   nftMode?: boolean
+  ignoreAmount?: boolean
 }) => {
   const governedTokenAccount = form.governedTokenAccount as AssetAccount
   return yup.object().shape({
@@ -391,7 +907,7 @@ export const getTokenTransferSchema = ({
         'Transfer amount must be less than the source account available amount',
         async function (val: number) {
           const isNft = nftMode || governedTokenAccount?.isNft
-          if (isNft) {
+          if (isNft || ignoreAmount) {
             return true
           }
           if (val && !form.governedTokenAccount) {
@@ -465,6 +981,172 @@ export const getTokenTransferSchema = ({
   })
 }
 
+export const getBatchTokenTransferSchema = ({
+  form,
+  connection,
+  tokenAmount,
+  mintDecimals,
+  nftMode,
+  ignoreAmount,
+}: {
+  form: any
+  connection: ConnectionContext
+  tokenAmount?: BN
+  mintDecimals?: number
+  nftMode?: boolean
+  ignoreAmount?: boolean
+}) => {
+  const governedTokenAccount = form.governedTokenAccount as AssetAccount
+  return yup.object().shape({
+    governedTokenAccount: yup.object().required('Source account is required'),
+    amount: yup.array().of(
+      yup.number()
+      .typeError('Amount is required')
+      .test(
+        'amount',
+        'Transfer amount must be less than the source account available amount',
+        async function (val: number) {
+          const isNft = nftMode || governedTokenAccount?.isNft
+          if (isNft || ignoreAmount) {
+            return true
+          }
+          if (val && !form.governedTokenAccount) {
+            return this.createError({
+              message: `Please select source account to validate the amount`,
+            })
+          }
+          if (
+            val &&
+            governedTokenAccount &&
+            governedTokenAccount?.extensions.mint
+          ) {
+            const mintValue = getMintNaturalAmountFromDecimalAsBN(
+              val,
+              typeof mintDecimals !== 'undefined'
+                ? mintDecimals
+                : governedTokenAccount?.extensions.mint.account.decimals
+            )
+            if (tokenAmount) {
+              return tokenAmount.gte(mintValue)
+            }
+            return !!(governedTokenAccount?.extensions.token?.publicKey &&
+            !governedTokenAccount.isSol
+              ? governedTokenAccount.extensions.token.account.amount.gte(
+                  mintValue
+                )
+              : new BN(
+                  governedTokenAccount.extensions.solAccount!.lamports
+                ).gte(mintValue))
+          }
+          return this.createError({
+            message: `Amount is required`,
+          })
+        }
+      )),
+    destinationAccount: yup
+      .array().of(
+        yup
+        .string()
+        .test(
+          'accountTests',
+          'Account validation error',
+          async function (val: string) {
+            if (val) {
+              try {
+                if (
+                  governedTokenAccount?.extensions?.transferAddress?.toBase58() ==
+                  val
+                ) {
+                  return this.createError({
+                    message: `Destination account address can't be same as source account`,
+                  })
+                }
+                await validateDestinationAccAddress(
+                  connection,
+                  val,
+                  governedTokenAccount?.extensions.transferAddress
+                )
+                return true
+              } catch (e) {
+                console.log(e)
+                return this.createError({
+                  message: `${e}`,
+                })
+              }
+            } else {
+              return this.createError({
+                message: `Destination account is required`,
+              })
+            }
+          }
+        )
+      ),
+  })
+}
+
+export const getBurnTokensSchema = ({
+  form,
+  tokenAmount,
+  mintDecimals,
+  nftMode,
+  ignoreAmount,
+}: {
+  form: any
+  tokenAmount?: BN
+  mintDecimals?: number
+  nftMode?: boolean
+  ignoreAmount?: boolean
+}) => {
+  const governedTokenAccount = form.governedTokenAccount as AssetAccount
+  return yup.object().shape({
+    governedTokenAccount: yup.object().required('Token account is required'),
+    amount: yup
+      .number()
+      .typeError('Amount is required')
+      .test(
+        'amount',
+        'Transfer amount must be less than the source account available amount',
+        async function (val: number) {
+          const isNft = nftMode || governedTokenAccount?.isNft
+          if (isNft || ignoreAmount) {
+            return true
+          }
+          if (val && !form.governedTokenAccount) {
+            return this.createError({
+              message: `Please select source account to validate the amount`,
+            })
+          }
+          if (
+            val &&
+            governedTokenAccount &&
+            governedTokenAccount?.extensions.mint
+          ) {
+            const mintValue = getMintNaturalAmountFromDecimalAsBN(
+              val,
+              typeof mintDecimals !== 'undefined'
+                ? mintDecimals
+                : governedTokenAccount?.extensions.mint.account.decimals
+            )
+            if (tokenAmount) {
+              return tokenAmount.gte(mintValue)
+            }
+            return !!(governedTokenAccount?.extensions.token?.publicKey &&
+            !governedTokenAccount.isSol
+              ? governedTokenAccount.extensions.token.account.amount.gte(
+                  mintValue
+                )
+              : new BN(
+                  governedTokenAccount.extensions.solAccount!.lamports
+                ).gte(mintValue))
+          }
+          return this.createError({
+            message: `Amount is required`,
+          })
+        }
+      ),
+  })
+}
+
 export const getMintSchema = ({ form, connection }) => {
   return yup.object().shape({
     amount: yup
@@ -481,9 +1163,7 @@ export const getMintSchema = ({ form, connection }) => {
             val,
             form.mintAccount?.extensions.mint.account.decimals
           )
-          return !!(
-            form.mintAccount.governance?.account.governedAccount && mintValue
-          )
+          return !!(form.mintAccount.extensions.mint.publicKey && mintValue)
         }
         return this.createError({
           message: `Amount is required`,
@@ -501,7 +1181,7 @@ export const getMintSchema = ({ form, connection }) => {
                 await validateDestinationAccAddressWithMint(
                   connection,
                   val,
-                  form.mintAccount.governance.account.governedAccount
+                  form.mintAccount.extensions.mint.publicKey
                 )
               } else {
                 return this.createError({
@@ -517,7 +1197,7 @@ export const getMintSchema = ({ form, connection }) => {
             }
           } else {
             return this.createError({
-              message: `Destination account is required`,
+              message: `Invalid destination account`,
             })
           }
         }
@@ -568,80 +1248,233 @@ export const getStakeSchema = ({ form }) => {
   })
 }
 
-export const getRealmCfgSchema = ({ form }) => {
-  return yup.object().shape({
-    governedAccount: yup
-      .object()
-      .nullable()
-      .required('Governed account is required'),
-    minCommunityTokensToCreateGovernance: yup
-      .number()
-      .required('Min community tokens to create governance is required'),
-    communityVoterWeightAddin: yup
-      .string()
-      .test(
-        'communityVoterWeightAddinTest',
-        'communityVoterWeightAddin validation error',
-        function (val: string) {
-          if (!form?.communityVoterWeightAddin) {
-            return true
-          }
-          if (val) {
-            try {
-              getValidatedPublickKey(val)
-              if (supportedPlugins.includes(val)) {
+// @asktree: It's odd that `form` would be an input both to the schema factory and the schema itself.
+export const getRealmCfgSchema = ({
+  form,
+  programVersion,
+}: {
+  form: any
+  programVersion: number
+}) => {
+  return programVersion >= 3
+    ? yup.object().shape({
+        governedAccount: yup
+          .object()
+          .nullable()
+          .required('Governed account is required'),
+        minCommunityTokensToCreateGovernance: yup
+          .number()
+          .required('Min community tokens to create governance is required'),
+        communityVoterWeightAddin: yup
+          .string()
+          .test(
+            'communityVoterWeightAddinTest',
+            'communityVoterWeightAddin validation error',
+            function (val: string) {
+              if (!form?.communityVoterWeightAddin) {
                 return true
+              }
+              if (val) {
+                try {
+                  getValidatedPublickKey(val)
+                  if (supportedPlugins.includes(val)) {
+                    return true
+                  } else {
+                    return this.createError({
+                      message: `Provided pubkey is not a known plugin pubkey`,
+                    })
+                  }
+                } catch (e) {
+                  console.log(e)
+                  return this.createError({
+                    message: `${e}`,
+                  })
+                }
               } else {
                 return this.createError({
-                  message: `Provided pubkey is not a known plugin pubkey`,
+                  message: `communityVoterWeightAddin is required`,
                 })
               }
-            } catch (e) {
-              console.log(e)
-              return this.createError({
-                message: `${e}`,
-              })
             }
-          } else {
-            return this.createError({
-              message: `communityVoterWeightAddin is required`,
-            })
-          }
-        }
-      ),
-    maxCommunityVoterWeightAddin: yup
-      .string()
-      .test(
-        'maxCommunityVoterWeightAddin',
-        'maxCommunityVoterWeightAddin validation error',
-        function (val: string) {
-          if (!form?.maxCommunityVoterWeightAddin) {
-            return true
-          }
-          if (val) {
-            try {
-              getValidatedPublickKey(val)
-              if ([...nftPluginsPks].includes(val)) {
+          ),
+        maxCommunityVoterWeightAddin: yup
+          .string()
+          .test(
+            'maxCommunityVoterWeightAddin',
+            'maxCommunityVoterWeightAddin validation error',
+            function (val: string) {
+              if (!form?.maxCommunityVoterWeightAddin) {
                 return true
+              }
+              if (val) {
+                try {
+                  getValidatedPublickKey(val)
+                  if (
+                    [...NFT_PLUGINS_PKS, ...HELIUM_VSR_PLUGINS_PKS].includes(
+                      val
+                    )
+                  ) {
+                    return true
+                  } else {
+                    return this.createError({
+                      message: `Provided pubkey is not a known plugin pubkey`,
+                    })
+                  }
+                } catch (e) {
+                  console.log(e)
+                  return this.createError({
+                    message: `${e}`,
+                  })
+                }
               } else {
                 return this.createError({
-                  message: `Provided pubkey is not a known plugin pubkey`,
+                  message: `maxCommunityVoterWeightAddin is required`,
                 })
               }
-            } catch (e) {
-              console.log(e)
-              return this.createError({
-                message: `${e}`,
-              })
             }
-          } else {
-            return this.createError({
-              message: `maxCommunityVoterWeightAddin is required`,
-            })
-          }
-        }
-      ),
-  })
+          ),
+        councilVoterWeightAddin: yup
+          .string()
+          .test(
+            'councilVoterWeightAddinTest',
+            'councilVoterWeightAddin validation error',
+            function (val: string) {
+              if (!form?.councilVoterWeightAddin) {
+                return true
+              }
+              if (val) {
+                try {
+                  getValidatedPublickKey(val)
+                  if (supportedPlugins.includes(val)) {
+                    return true
+                  } else {
+                    return this.createError({
+                      message: `Provided pubkey is not a known plugin pubkey`,
+                    })
+                  }
+                } catch (e) {
+                  console.log(e)
+                  return this.createError({
+                    message: `${e}`,
+                  })
+                }
+              } else {
+                return this.createError({
+                  message: `councilVoterWeightAddin is required`,
+                })
+              }
+            }
+          ),
+        maxCouncilVoterWeightAddin: yup
+          .string()
+          .test(
+            'maxCouncilVoterWeightAddin',
+            'maxCouncilVoterWeightAddin validation error',
+            function (val: string) {
+              if (!form?.maxCouncilVoterWeightAddin) {
+                return true
+              }
+              if (val) {
+                try {
+                  getValidatedPublickKey(val)
+                  if ([...NFT_PLUGINS_PKS].includes(val)) {
+                    return true
+                  } else {
+                    return this.createError({
+                      message: `Provided pubkey is not a known plugin pubkey`,
+                    })
+                  }
+                } catch (e) {
+                  console.log(e)
+                  return this.createError({
+                    message: `${e}`,
+                  })
+                }
+              } else {
+                return this.createError({
+                  message: `maxCouncilVoterWeightAddin is required`,
+                })
+              }
+            }
+          ),
+      })
+    : yup.object().shape({
+        governedAccount: yup
+          .object()
+          .nullable()
+          .required('Governed account is required'),
+        minCommunityTokensToCreateGovernance: yup
+          .number()
+          .required('Min community tokens to create governance is required'),
+        communityVoterWeightAddin: yup
+          .string()
+          .test(
+            'communityVoterWeightAddinTest',
+            'communityVoterWeightAddin validation error',
+            function (val: string) {
+              if (!form?.communityVoterWeightAddin) {
+                return true
+              }
+              if (val) {
+                try {
+                  getValidatedPublickKey(val)
+                  if (supportedPlugins.includes(val)) {
+                    return true
+                  } else {
+                    return this.createError({
+                      message: `Provided pubkey is not a known plugin pubkey`,
+                    })
+                  }
+                } catch (e) {
+                  console.log(e)
+                  return this.createError({
+                    message: `${e}`,
+                  })
+                }
+              } else {
+                return this.createError({
+                  message: `communityVoterWeightAddin is required`,
+                })
+              }
+            }
+          ),
+        maxCommunityVoterWeightAddin: yup
+          .string()
+          .test(
+            'maxCommunityVoterWeightAddin',
+            'maxCommunityVoterWeightAddin validation error',
+            function (val: string) {
+              if (!form?.maxCommunityVoterWeightAddin) {
+                return true
+              }
+              if (val) {
+                try {
+                  getValidatedPublickKey(val)
+                  if (
+                    [...NFT_PLUGINS_PKS, ...HELIUM_VSR_PLUGINS_PKS].includes(
+                      val
+                    )
+                  ) {
+                    return true
+                  } else {
+                    return this.createError({
+                      message: `Provided pubkey is not a known plugin pubkey`,
+                    })
+                  }
+                } catch (e) {
+                  console.log(e)
+                  return this.createError({
+                    message: `${e}`,
+                  })
+                }
+              } else {
+                return this.createError({
+                  message: `maxCommunityVoterWeightAddin is required`,
+                })
+              }
+            }
+          ),
+      })
 }
 
 export const getCreateTokenMetadataSchema = () => {

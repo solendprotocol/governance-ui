@@ -1,52 +1,66 @@
 import ReactMarkdown from 'react-markdown/react-markdown.min'
 import remarkGfm from 'remark-gfm'
 import { ExternalLinkIcon } from '@heroicons/react/outline'
-import useProposal from 'hooks/useProposal'
-import ProposalStateBadge from 'components/ProposalStatusBadge'
-import { InstructionPanel } from 'components/instructions/instructionPanel'
+import { useProposalGovernanceQuery } from 'hooks/useProposal'
+import ProposalStateBadge from '@components/ProposalStateBadge'
+import { TransactionPanel } from '@components/instructions/TransactionPanel'
 import DiscussionPanel from 'components/chat/DiscussionPanel'
-import VotePanel from 'components/VotePanel'
-import ApprovalQuorum from 'components/ApprovalQuorum'
+import VotePanel from '@components/VotePanel'
+import { ApprovalProgress, VetoProgress } from '@components/QuorumProgress'
 import useRealm from 'hooks/useRealm'
 import useProposalVotes from 'hooks/useProposalVotes'
 import ProposalTimeStatus from 'components/ProposalTimeStatus'
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import ProposalActionsPanel from '@components/ProposalActions'
 import { getRealmExplorerHost } from 'tools/routing'
-import { ProposalState } from '@solana/spl-governance'
+import {
+  GovernanceAccountType,
+  ProposalState,
+  VoteType,
+} from '@solana/spl-governance'
 import VoteResultStatus from '@components/VoteResultStatus'
 import VoteResults from '@components/VoteResults'
+import MultiChoiceVotes from '@components/MultiChoiceVotes'
 import { resolveProposalDescription } from '@utils/helpers'
 import PreviousRouteBtn from '@components/PreviousRouteBtn'
 import Link from 'next/link'
 import useQueryContext from '@hooks/useQueryContext'
 import { ChevronRightIcon } from '@heroicons/react/solid'
 import ProposalExecutionCard from '@components/ProposalExecutionCard'
-import useWalletStore from 'stores/useWalletStore'
 import ProposalVotingPower from '@components/ProposalVotingPower'
 import { useMediaQuery } from 'react-responsive'
 import NftProposalVoteState from 'NftVotePlugin/NftProposalVoteState'
+import ProposalWarnings from './ProposalWarnings'
+import useWalletOnePointOh from '@hooks/useWalletOnePointOh'
+import VotingRules from '@components/VotingRules'
+import { useRouteProposalQuery } from '@hooks/queries/proposal'
+import { AddToCalendarButton } from 'add-to-calendar-button-react'
+import { CalendarAdd } from '@carbon/icons-react'
+import Modal from '@components/Modal'
+import dayjs from 'dayjs'
+import { useConnection } from '@solana/wallet-adapter-react'
+import { useTokenOwnerRecordByPubkeyQuery } from '@hooks/queries/tokenOwnerRecord'
 
 const Proposal = () => {
   const { realmInfo, symbol } = useRealm()
-  const { proposal, descriptionLink, governance } = useProposal()
+  const proposal = useRouteProposalQuery().data?.result
+  const governance = useProposalGovernanceQuery().data?.result
+  const tor = useTokenOwnerRecordByPubkeyQuery(proposal?.account.tokenOwnerRecord).data?.result
+  const { connection } = useConnection()
+  const descriptionLink = proposal?.account.descriptionLink
+  const allowDiscussion = realmInfo?.allowDiscussion ?? true
+  const isMulti =
+    proposal?.account.voteType !== VoteType.SINGLE_CHOICE &&
+    proposal?.account.accountType === GovernanceAccountType.ProposalV2
+
+  const [openCalendarModal, setOpenCalendarModal] = useState(false)
   const [description, setDescription] = useState('')
-  const { yesVoteProgress, yesVotesRequired } = useProposalVotes(
-    proposal?.account
-  )
-  const currentWallet = useWalletStore((s) => s.current)
+  const voteData = useProposalVotes(proposal?.account)
+  const currentWallet = useWalletOnePointOh()
   const showResults =
     proposal &&
     proposal.account.state !== ProposalState.Cancelled &&
     proposal.account.state !== ProposalState.Draft
-
-  const votePassed =
-    proposal &&
-    (proposal.account.state === ProposalState.Completed ||
-      proposal.account.state === ProposalState.Executing ||
-      proposal.account.state === ProposalState.SigningOff ||
-      proposal.account.state === ProposalState.Succeeded ||
-      proposal.account.state === ProposalState.ExecutingWithErrors)
 
   const votingEnded =
     !!governance &&
@@ -67,6 +81,10 @@ const Proposal = () => {
     }
   }, [descriptionLink])
 
+  const proposedBy =
+    proposal &&
+    tor?.account.governingTokenOwner.toBase58()
+
   const { fmtUrlWithCluster } = useQueryContext()
   const showTokenBalance = proposal
     ? proposal.account.state === ProposalState.Draft ||
@@ -79,8 +97,21 @@ const Proposal = () => {
       proposal.account.state === ProposalState.Executing ||
       proposal.account.state === ProposalState.ExecutingWithErrors)
 
+  const votingTimeEnds =
+    proposal?.account.signingOffAt &&
+    governance &&
+    proposal.account.signingOffAt.toNumber() +
+      governance.account.config.baseVotingTime
+
+  const coolOffTimeEnds =
+    proposal?.account.signingOffAt &&
+    governance &&
+    proposal.account.signingOffAt.toNumber() +
+      governance.account.config.baseVotingTime +
+      governance.account.config.votingCoolOffTime
+
   return (
-    <div className="grid grid-cols-12 gap-4">
+    <div className="grid grid-cols-12 gap-4 overflow-y-auto">
       <div className="bg-bkg-2 rounded-lg p-4 md:p-6 col-span-12 md:col-span-7 lg:col-span-8 space-y-3">
         {proposal ? (
           <>
@@ -90,7 +121,11 @@ const Proposal = () => {
                 <a
                   href={`https://${getRealmExplorerHost(
                     realmInfo
-                  )}/#/proposal/${proposal.pubkey.toBase58()}?programId=${proposal.owner.toBase58()}`}
+                  )}/account/${proposal.pubkey.toBase58()}${
+                    connection.rpcEndpoint.includes('devnet')
+                      ? '?cluster=devnet'
+                      : ''
+                  }`}
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={(e) => e.stopPropagation()}
@@ -107,6 +142,12 @@ const Proposal = () => {
                 </h1>
                 <ProposalStateBadge proposal={proposal.account} />
               </div>
+              {proposedBy && (
+                <p className="text-[10px]">
+                  Proposed by:{' '}
+                  {tor?.account.governingTokenOwner.toBase58()}
+                </p>
+              )}
             </div>
 
             {description && (
@@ -120,9 +161,11 @@ const Proposal = () => {
                 </ReactMarkdown>
               </div>
             )}
-
-            <InstructionPanel />
-            {isTwoCol && <DiscussionPanel />}
+            {proposal.account && (
+              <ProposalWarnings proposal={proposal.account} />
+            )}
+            <TransactionPanel />
+            {isTwoCol && allowDiscussion && <DiscussionPanel />}
           </>
         ) : (
           <>
@@ -134,36 +177,119 @@ const Proposal = () => {
       </div>
 
       <div className="col-span-12 md:col-span-5 lg:col-span-4 space-y-4">
+        <VotePanel />
         {showTokenBalance && <ProposalVotingPower />}
         {showResults ? (
           <div className="bg-bkg-2 rounded-lg">
             <div className="p-4 md:p-6">
               {proposal?.account.state === ProposalState.Voting ? (
                 <div className="flex items-end justify-between mb-4">
-                  <h3 className="mb-0">Voting Now</h3>
+                  <h3 className="mb-0 flex-row">
+                    Voting Now
+                    <CalendarAdd
+                      onClick={() => setOpenCalendarModal(true)}
+                      className="w-5"
+                    ></CalendarAdd>
+                    {openCalendarModal && (
+                      <Modal
+                        sizeClassName="sm:max-w-sm"
+                        onClose={() => setOpenCalendarModal(false)}
+                        isOpen={openCalendarModal}
+                      >
+                        <div>
+                          <p>Remind me about voting time end</p>
+                          {votingTimeEnds && (
+                            <AddToCalendarButton
+                              hideCheckmark
+                              size="6|4|2"
+                              name={`${realmInfo?.displayName} voting time for proposal: ${proposal.account.name} soon ends`}
+                              location={`${window.location.pathname}`}
+                              description={''}
+                              startDate={dayjs
+                                .unix(votingTimeEnds)
+                                .format('YYYY-MM-DD')}
+                              startTime={dayjs
+                                .unix(votingTimeEnds)
+                                .subtract(30, 'minute')
+                                .format('HH:mm')}
+                              endTime={dayjs
+                                .unix(votingTimeEnds)
+                                .format('HH:mm')}
+                              options="Google"
+                            />
+                          )}
+                        </div>
+                        {governance?.account.config.votingCoolOffTime && (
+                          <div>
+                            <p>Remind me about cool off time end</p>
+                            {coolOffTimeEnds && (
+                              <AddToCalendarButton
+                                hideCheckmark
+                                size="6|4|2"
+                                name={`${realmInfo?.displayName} cool off time for proposal: ${proposal.account.name} soon ends`}
+                                location={`${window.location.pathname}`}
+                                description={''}
+                                startDate={dayjs
+                                  .unix(coolOffTimeEnds)
+                                  .format('YYYY-MM-DD')}
+                                startTime={dayjs
+                                  .unix(coolOffTimeEnds)
+                                  .subtract(30, 'minute')
+                                  .format('HH:mm')}
+                                endTime={dayjs
+                                  .unix(coolOffTimeEnds)
+                                  .format('HH:mm')}
+                                options="Google"
+                              />
+                            )}
+                          </div>
+                        )}
+                      </Modal>
+                    )}
+                  </h3>
                   <ProposalTimeStatus proposal={proposal?.account} />
                 </div>
               ) : (
                 <h3 className="mb-4">Results</h3>
               )}
-              {proposal?.account.state === ProposalState.Voting ? (
-                <div className="pb-3">
-                  <ApprovalQuorum
-                    yesVotesRequired={yesVotesRequired}
-                    progress={yesVoteProgress}
-                    showBg
-                  />
-                </div>
+              {proposal?.account.state === ProposalState.Voting && !isMulti ? (
+                <>
+                  <div className="pb-3">
+                    <ApprovalProgress
+                      votesRequired={voteData.yesVotesRequired}
+                      progress={voteData.yesVoteProgress}
+                      showBg
+                    />
+                  </div>
+                  {voteData._programVersion !== undefined &&
+                  // @asktree: here is some typescript gore because typescript doesn't know that a number being > 3 means it isn't 1 or 2
+                  voteData._programVersion !== 1 &&
+                  voteData._programVersion !== 2 &&
+                  voteData.veto !== undefined &&
+                  (voteData.veto.voteProgress ?? 0) > 0 ? (
+                    <div className="pb-3">
+                      <VetoProgress
+                        votesRequired={voteData.veto.votesRequired}
+                        progress={voteData.veto.voteProgress}
+                        showBg
+                      />
+                    </div>
+                  ) : undefined}
+                </>
               ) : (
                 <div className="pb-3">
-                  <VoteResultStatus
-                    progress={yesVoteProgress}
-                    votePassed={votePassed}
-                    yesVotesRequired={yesVotesRequired}
-                  />
+                  <VoteResultStatus />
                 </div>
               )}
-              <VoteResults proposal={proposal.account} />
+
+              {isMulti ? (
+                <MultiChoiceVotes
+                  proposal={proposal.account}
+                  limit={proposal.account.options.length}
+                />
+              ) : (
+                <VoteResults proposal={proposal.account} />
+              )}
               {proposal && (
                 <div className="flex justify-end mt-4">
                   <Link
@@ -182,13 +308,13 @@ const Proposal = () => {
             </div>
           </div>
         ) : null}
-        <VotePanel />
+        <VotingRules />
         <NftProposalVoteState proposal={proposal}></NftProposalVoteState>
         {proposal && currentWallet && showProposalExecution && (
           <ProposalExecutionCard />
         )}
         <ProposalActionsPanel />
-        {!isTwoCol && proposal && (
+        {!isTwoCol && proposal && allowDiscussion && (
           <div className="bg-bkg-2 rounded-lg p-4 md:p-6 ">
             <DiscussionPanel />
           </div>

@@ -1,15 +1,20 @@
 import { Connection, PublicKey } from '@solana/web3.js'
-import { AccountMetaData } from '@solana/spl-governance'
+import { AccountMetaData, SYSTEM_PROGRAM_ID } from '@solana/spl-governance'
 import { tryGetMint, tryGetTokenAccount } from '../../../utils/tokens'
 import BN from 'bn.js'
 import { getMintDecimalAmountFromNatural } from '@tools/sdk/units'
-import tokenService from '@utils/services/token'
-export interface TokenMintMetadata {
+import tokenPriceService from '@utils/services/tokenPrice'
+import { TokenInstruction } from '@solendprotocol/solend-sdk/dist/instructions/instruction'
+import { AuthorityType } from '@solana/spl-token'
+import { struct, u8 } from 'buffer-layout'
+import { publicKey } from '@coral-xyz/borsh'
+
+interface TokenMintMetadata {
   name: string
 }
 
 // Mint metadata for Well known tokens displayed on the instruction card
-export const MINT_METADATA = {
+const MINT_METADATA = {
   MangoCzJ36AjZyKwVj3VnYU4GTonjfVEnJmvvWaxLac: { name: 'MNGO' },
   EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v: { name: 'USDC' },
   '5oVNBeEEQvYi1cX3ir8Dx5n1P7pdxydbGF2X4TxVusJm': { name: 'SOCN' },
@@ -17,6 +22,7 @@ export const MINT_METADATA = {
   MyHd6a7HWKTMeJMHBkrbMq4hZwZxwn9x7dxXcopQ4Wd: { name: 'OMH' },
   UXPhBoR3qG4UCiGNJfV7MqhHyFqKN68g45GoYvAeL2M: { name: 'UXP' },
   H7uqouPsJkeEiLpCEoC1qYVVquDrZan6ZfdPK2gS44zm: { name: 'FORE' },
+  BaoawH9p2J8yUK9r5YXQs3hQwmUJgscACjmTkh8rMwYL: { name: 'ALL' },
 }
 
 export function getMintMetadata(
@@ -24,7 +30,7 @@ export function getMintMetadata(
 ): TokenMintMetadata {
   const tokenMintAddress = tokenMintPk ? tokenMintPk.toBase58() : ''
   const tokenInfo = tokenMintAddress
-    ? tokenService.getTokenInfo(tokenMintAddress)
+    ? tokenPriceService.getTokenInfo(tokenMintAddress)
     : null
   return tokenInfo
     ? { name: tokenInfo.symbol }
@@ -75,6 +81,68 @@ export const SPL_TOKEN_INSTRUCTIONS = {
                   <span>{`${tokenAmount.toNumber().toLocaleString()} ${
                     tokenMintDescriptor?.name ?? ''
                   }`}</span>
+                </div>
+              </div>
+            ) : (
+              <div>{JSON.stringify(data)}</div>
+            )}
+          </>
+        )
+      },
+    },
+    6: {
+      name: 'Token: Set Mint Authority',
+      accounts: [{ name: 'Mint', important: true }, { name: 'Mint Authority' }],
+      getDataUI: async (
+        connection: Connection,
+        data: Uint8Array
+        //accounts: AccountMetaData[]
+      ) => {
+        interface SetAuthorityInstructionData {
+          instruction: TokenInstruction.SetAuthority
+          authorityType: AuthorityType
+          newAuthorityOption: 1 | 0
+          newAuthority: PublicKey
+        }
+        const authorityTypes = [
+          'MintTokens',
+          'FreezeAccount',
+          'AccountOwner',
+          'CloseAccount',
+        ]
+        const setAuthorityInstructionData = struct<SetAuthorityInstructionData>(
+          [
+            u8('instruction'),
+            u8('authorityType'),
+            u8('newAuthorityOption'),
+            publicKey('newAuthority'),
+          ]
+        )
+        let authorityParams: SetAuthorityInstructionData | null = null
+        try {
+          authorityParams = setAuthorityInstructionData.decode(
+            Buffer.from(data)
+          )
+        } catch (e) {
+          console.log(e)
+        }
+
+        return (
+          <>
+            {authorityParams ? (
+              <div className="space-x-3">
+                <div>
+                  New authority:{' '}
+                  {authorityParams.newAuthority.equals(SYSTEM_PROGRAM_ID)
+                    ? 'None'
+                    : authorityParams.newAuthority.toBase58()}
+                </div>
+                <div>
+                  New authority option: {authorityParams.newAuthorityOption}
+                </div>
+                <div>
+                  Authority type:{' '}
+                  {authorityTypes[authorityParams.authorityType]}
                 </div>
               </div>
             ) : (

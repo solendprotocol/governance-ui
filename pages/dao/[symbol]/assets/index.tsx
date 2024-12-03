@@ -1,31 +1,33 @@
-import React from 'react'
 import AssetsList from '@components/AssetsList/AssetsList'
 import Tooltip from '@components/Tooltip'
 import useRealm from '@hooks/useRealm'
 import useQueryContext from '@hooks/useQueryContext'
 import { useRouter } from 'next/router'
-import useWalletStore from 'stores/useWalletStore'
 import PreviousRouteBtn from '@components/PreviousRouteBtn'
 import { LinkButton } from '@components/Button'
 import { PlusCircleIcon } from '@heroicons/react/outline'
+import useWalletOnePointOh from '@hooks/useWalletOnePointOh'
+import { useRealmQuery } from '@hooks/queries/realm'
+import { useLegacyVoterWeight } from '@hooks/queries/governancePower'
 export const NEW_PROGRAM_VIEW = `/program/new`
 
 const Assets = () => {
   const router = useRouter()
+  const realm = useRealmQuery().data?.result
+  const { result: ownVoterWeight } = useLegacyVoterWeight()
   const {
     symbol,
-    realm,
-    ownVoterWeight,
     toManyCommunityOutstandingProposalsForUser,
     toManyCouncilOutstandingProposalsForUse,
   } = useRealm()
-  const connected = useWalletStore((s) => s.connected)
+  const wallet = useWalletOnePointOh()
+  const connected = !!wallet?.connected
   const { fmtUrlWithCluster } = useQueryContext()
   const goToNewAssetForm = () => {
     router.push(fmtUrlWithCluster(`/dao/${symbol}${NEW_PROGRAM_VIEW}`))
   }
   const canCreateGovernance = realm
-    ? ownVoterWeight.canCreateGovernance(realm)
+    ? ownVoterWeight?.canCreateGovernance(realm)
     : null
 
   const newAssetToolTip = renderAddNewAssetTooltip(

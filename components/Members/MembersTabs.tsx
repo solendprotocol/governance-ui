@@ -1,29 +1,50 @@
 import { FunctionComponent, useMemo } from 'react'
-import useWalletStore from 'stores/useWalletStore'
-import { LogoutIcon, UserCircleIcon } from '@heroicons/react/outline'
-import useRealm from '@hooks/useRealm'
-import tokenService from '@utils/services/token'
+import { LogoutIcon } from '@heroicons/react/outline'
+import tokenPriceService from '@utils/services/tokenPrice'
 import { fmtMintAmount } from '@tools/sdk/units'
 import { PublicKey } from '@solana/web3.js'
-import { AddressImage, DisplayAddress } from '@cardinal/namespaces-components'
 import { Member } from '@utils/uiTypes/members'
 import { MintInfo } from '@solana/spl-token'
+import { useRealmQuery } from '@hooks/queries/realm'
+import {
+  useRealmCommunityMintInfoQuery,
+  useRealmCouncilMintInfoQuery,
+} from '@hooks/queries/mintInfo'
+import { useRealmConfigQuery } from '@hooks/queries/realmConfig'
+import { NFT_PLUGINS_PKS } from '@constants/plugins'
+import { ProfileName } from '@components/Profile/ProfileName'
+import { ProfileImage } from '@components/Profile'
 
 interface MembersTabsProps {
   activeTab: Member
   onChange: (x) => void
   tabs: Array<Member>
+  vsrMode?: boolean
 }
 
 const MembersTabs: FunctionComponent<MembersTabsProps> = ({
   activeTab,
   onChange,
   tabs,
+  vsrMode
 }) => {
-  const { mint, councilMint, realm } = useRealm()
+  const realm = useRealmQuery().data?.result
+  const mint = useRealmCommunityMintInfoQuery().data?.result
+  const councilMint = useRealmCouncilMintInfoQuery().data?.result
+
+  const config = useRealmConfigQuery().data?.result
+  const currentPluginPk = config?.account.communityTokenConfig.voterWeightAddin
+  const isNftMode =
+    (currentPluginPk &&
+      NFT_PLUGINS_PKS.includes(currentPluginPk?.toBase58())) ||
+    false
+
   const tokenName = realm
-    ? tokenService.getTokenInfo(realm?.account.communityMint.toBase58())?.symbol
+    ? tokenPriceService.getTokenInfo(realm?.account.communityMint.toBase58())
+        ?.symbol
     : ''
+
+  const nftName = isNftMode ? 'NFT' : undefined
   return (
     <div
       className={`overflow-y-auto relative thin-scroll`}
@@ -48,8 +69,9 @@ const MembersTabs: FunctionComponent<MembersTabsProps> = ({
               mint={mint}
               councilMint={councilMint}
               activeTab={activeTab}
-              tokenName={tokenName || ''}
+              tokenName={tokenName || nftName || ''}
               onChange={onChange}
+              vsrMode={vsrMode}
             ></MemberItems>
           )
         )
@@ -67,19 +89,20 @@ const MemberItems = ({
   activeTab,
   tokenName,
   onChange,
+  vsrMode
 }: {
   member: Member
   mint?: MintInfo
   councilMint?: MintInfo
   activeTab: Member
   tokenName: string
-  onChange: (member: Member) => void
+  onChange: (member: Member) => void,
+  vsrMode?: boolean
 }) => {
   const {
     walletAddress,
     councilVotes,
     communityVotes,
-    votesCasted,
     hasCommunityTokenOutsideRealm,
     hasCouncilTokenOutsideRealm,
   } = member
@@ -91,30 +114,27 @@ const MemberItems = ({
     councilVotes && !councilVotes.isZero()
       ? fmtMintAmount(councilMint, councilVotes)
       : null
-  const { connection } = useWalletStore((s) => s)
 
   const renderAddressName = useMemo(() => {
     return (
-      <DisplayAddress
-        connection={connection.current}
-        address={new PublicKey(walletAddress)}
+      <ProfileName
+        publicKey={new PublicKey(walletAddress)}
         height="12px"
         width="100px"
         dark={true}
       />
     )
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- TODO please fix, it can cause difficult bugs. You might wanna check out https://bobbyhadz.com/blog/react-hooks-exhaustive-deps for info. -@asktree
   }, [walletAddress])
   const renderAddressImage = useMemo(
     () => (
-      <AddressImage
-        dark={true}
-        connection={connection.current}
-        address={new PublicKey(walletAddress)}
-        height="32px"
-        width="32px"
-        placeholder={<UserCircleIcon className="w-6 h-6 text-fgd-3" />}
+      <ProfileImage
+        publicKey={new PublicKey(walletAddress)}
+        expanded={false}
+        className="w-6 h-6 text-fgd-3"
       />
     ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- TODO please fix, it can cause difficult bugs. You might wanna check out https://bobbyhadz.com/blog/react-hooks-exhaustive-deps for info. -@asktree
     [walletAddress]
   )
   return (
@@ -134,25 +154,27 @@ const MemberItems = ({
         </div>
         <div>
           <h3 className="flex mb-1 text-base font-bold">{renderAddressName}</h3>
-          <p className="mb-0 text-xs text-fgd-1">Votes Cast: {votesCasted}</p>
-          <span className="text-xs text-fgd-3">
-            {(communityAmount || !councilAmount) && (
-              <span className="flex items-center">
-                {tokenName} Votes {communityAmount || 0}
-                {hasCommunityTokenOutsideRealm && (
-                  <LogoutIcon className="w-4 h-4 ml-1"></LogoutIcon>
-                )}
-              </span>
-            )}
-            {councilAmount && (
-              <span className="flex items-center">
-                Council Votes {councilAmount}{' '}
-                {hasCouncilTokenOutsideRealm && (
-                  <LogoutIcon className="w-4 h-4 ml-1"></LogoutIcon>
-                )}
-              </span>
-            )}
-          </span>
+          {vsrMode ?
+            '' :
+            <span className="text-xs text-fgd-3">
+              {(communityAmount || !councilAmount) && (
+                <span className="flex items-center">
+                  {tokenName} votes {communityAmount || 0}
+                  {hasCommunityTokenOutsideRealm && (
+                    <LogoutIcon className="w-4 h-4 ml-1"></LogoutIcon>
+                  )}
+                </span>
+              )}
+              {councilAmount && (
+                <span className="flex items-center">
+                  Council votes {councilAmount}{' '}
+                  {hasCouncilTokenOutsideRealm && (
+                    <LogoutIcon className="w-4 h-4 ml-1"></LogoutIcon>
+                  )}
+                </span>
+              )}
+            </span>
+          }
         </div>
       </div>
     </button>

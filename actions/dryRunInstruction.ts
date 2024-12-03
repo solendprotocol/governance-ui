@@ -1,11 +1,11 @@
 import { InstructionData } from '@solana/spl-governance'
 
 import {
+  ComputeBudgetProgram,
   Connection,
   Transaction,
   TransactionInstruction,
 } from '@solana/web3.js'
-import { simulateTransaction } from '../utils/send'
 import { WalletAdapter } from '@solana/wallet-adapter-base'
 
 export async function dryRunInstruction(
@@ -15,7 +15,15 @@ export async function dryRunInstruction(
   prerequisiteInstructionsToRun?: TransactionInstruction[] | undefined,
   additionalInstructions?: InstructionData[]
 ) {
+  const recentBlockHash = await connection.getLatestBlockhash()
   const transaction = new Transaction({ feePayer: wallet.publicKey })
+  transaction.lastValidBlockHeight = recentBlockHash.lastValidBlockHeight
+  transaction.recentBlockhash = recentBlockHash.blockhash
+
+  transaction.add(
+    ComputeBudgetProgram.setComputeUnitLimit({ units: 1_000_000 })
+  )
+
   if (prerequisiteInstructionsToRun) {
     prerequisiteInstructionsToRun.map((x) => transaction.add(x))
   }
@@ -37,7 +45,11 @@ export async function dryRunInstruction(
     })
   }
 
-  const result = await simulateTransaction(connection, transaction, 'single')
+  const result = await connection.simulateTransaction(
+    transaction,
+    undefined,
+    true
+  )
 
   return { response: result.value, transaction }
 }

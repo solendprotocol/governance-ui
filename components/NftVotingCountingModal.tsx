@@ -1,12 +1,12 @@
+import { useVotingNfts } from '@hooks/queries/plugins/nftVoter'
 import { usePrevious } from '@hooks/usePrevious'
-import { NftVoterClient } from '@solana/governance-program-library'
+import useUserOrDelegator from '@hooks/useUserOrDelegator'
+import useWalletOnePointOh from '@hooks/useWalletOnePointOh'
 import useNftProposalStore from 'NftVotePlugin/NftProposalStore'
-import useNftPluginStore from 'NftVotePlugin/store/nftPluginStore'
 import { useEffect, useState } from 'react'
 import useTransactionsStore from 'stores/useTransactionStore'
-import useVotePluginsClientStore from 'stores/useVotePluginsClientStore'
-import useWalletStore from 'stores/useWalletStore'
 import Modal from './Modal'
+import {useNftClient} from "../VoterWeightPlugins/useNftClient";
 
 const NftVotingCountingModal = () => {
   const votingInProgress = useNftProposalStore((s) => s.votingInProgress)
@@ -21,19 +21,18 @@ const NftVotingComponent = () => {
     countedNftsForProposal,
     proposal,
   } = useNftProposalStore()
-  const client = useVotePluginsClientStore(
-    (s) => s.state.currentRealmVotingClient
-  )
-  const wallet = useWalletStore((s) => s.current)
-  const { votingNfts } = useNftPluginStore((s) => s.state)
+  const wallet = useWalletOnePointOh()
+  const userPk = useUserOrDelegator()
+  const votingNfts = useVotingNfts(userPk) ?? []
   const votingInProgress = useNftProposalStore((s) => s.votingInProgress)
   const usedNfts = countedNftsForProposal.length
-  const totalVotingPower = votingNfts.length
+  const totalVotingPower = votingNfts.length //  TODO this is sometimes incorrect, power per nft is determined by config
   const remainingNftsToCount = totalVotingPower - usedNfts
   //in last tx there is max of 5 nfts
   const lastTransactionNftsCount = 5
   const maxNftsPerTransaction = 8
 
+  const { nftClient } = useNftClient()
   const [usedNftsCount, setUsedNftsCount] = useState(0)
   const [remainingVotingPower, setRemainingVotingPower] = useState(0)
   const handleCalcCountedNfts = (val: number) => {
@@ -47,7 +46,8 @@ const NftVotingComponent = () => {
   }, [usedNfts, remainingNftsToCount])
 
   useEffect(() => {
-    const multiplier = processedTransactions - prevProcessedTransactions
+    const multiplier =
+      processedTransactions - (prevProcessedTransactions as number)
     if (processedTransactions !== 0) {
       if (remainingVotingPower <= lastTransactionNftsCount) {
         handleCalcCountedNfts(remainingVotingPower)
@@ -69,6 +69,7 @@ const NftVotingComponent = () => {
         )
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- TODO please fix, it can cause difficult bugs. You might wanna check out https://bobbyhadz.com/blog/react-hooks-exhaustive-deps for info. -@asktree
   }, [processedTransactions])
 
   return votingInProgress ? (
@@ -79,7 +80,7 @@ const NftVotingComponent = () => {
       wrapperStyle={{ top: '-350px' }}
       onClose={() =>
         closeNftVotingCountingModal(
-          client.client as NftVoterClient,
+          nftClient!,
           proposal!,
           wallet!.publicKey!
         )

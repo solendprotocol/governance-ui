@@ -1,5 +1,4 @@
-import { BN } from '@project-serum/anchor'
-import { bs58 } from '@project-serum/anchor/dist/cjs/utils/bytes'
+import { bs58 } from '@coral-xyz/anchor/dist/cjs/utils/bytes'
 import {
   ProposalTransaction,
   getGovernanceSchemaForAccount,
@@ -19,11 +18,6 @@ export interface DepositWithWallet {
   wallet: PublicKey
   deposit: Deposit
 }
-export interface DepoistWithVoter {
-  amount: BN | undefined
-  voterPk: PublicKey
-  startTs: BN | undefined
-}
 
 //TODO fcn specific to grant instruction => make it generic for all governanceAccounts and move to sdk
 export const getProposalsTransactions = async (
@@ -37,6 +31,7 @@ export const getProposalsTransactions = async (
     headers: {
       'Content-Type': 'application/json',
     },
+    // TODO batch alert
     data: JSON.stringify([
       ...pubkeys.map((x) => {
         return {

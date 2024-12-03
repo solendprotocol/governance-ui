@@ -10,6 +10,8 @@ import {
 } from '@solana/spl-governance'
 import { getCertifiedRealmInfo } from '@models/registry/api'
 import { accountsToPubkeyMap } from '@tools/sdk/accounts'
+import { fmtTokenAmount } from '@utils/formatting'
+import { formatNumber } from '@utils/formatNumber'
 
 const fiveMinutesSeconds = 5 * 60
 const toleranceSeconds = 30
@@ -28,12 +30,12 @@ function errorWrapper() {
 // run every 5 mins, checks if a governance proposal just opened in the last 5 mins
 // and notifies on WEBHOOK_URL
 async function runNotifier() {
-  const REALM_SYMBOL = process.env.REALM_SYMBOL || 'MNGO'
+  const REALM = process.env.REALM || 'MNGO'
   const connectionContext = getConnectionContext('mainnet')
-  const realmInfo = await getCertifiedRealmInfo(REALM_SYMBOL, connectionContext)
+  const realmInfo = await getCertifiedRealmInfo(REALM, connectionContext)
 
   const connection = new Connection(process.env.CLUSTER_URL!)
-  console.log(`- getting all governance accounts for ${REALM_SYMBOL}`)
+  console.log(`- getting all governance accounts for ${REALM}`)
   const governances = await getGovernanceAccounts(
     connection,
     realmInfo!.programId,
@@ -52,7 +54,7 @@ async function runNotifier() {
     })
   )
 
-  console.log(`- scanning all '${REALM_SYMBOL}' proposals`)
+  console.log(`- scanning all '${REALM}' proposals`)
   let countJustOpenedForVoting = 0
   let countOpenForVotingSinceSomeTime = 0
   let countVotingNotStartedYet = 0
@@ -80,6 +82,56 @@ async function runNotifier() {
         // voting is closed
         proposal.account.votingCompletedAt
       ) {
+        if (
+          nowInSeconds - proposal.account.votingCompletedAt.toNumber() <=
+          fiveMinutesSeconds + toleranceSeconds
+        ) {
+          const votingTokenDecimals = 6
+          const yesVotes = fmtTokenAmount(
+            proposal.account.getYesVoteCount(),
+            votingTokenDecimals
+          )
+          const noVotes = fmtTokenAmount(
+            proposal.account.getNoVoteCount(),
+            votingTokenDecimals
+          )
+
+          const minVotesNeeded =
+            proposal.account.governance.toBase58() ===
+            '7D6tGmaMyC8i73Q8X2Fec2S1Zb5rkyai6pctdMqHpHWT'
+              ? 50000000
+              : 100000000
+          const quorumReached = yesVotes >= minVotesNeeded
+          const isSuccess = yesVotes > noVotes && quorumReached
+
+          const msg = `
+          Proposal Ended: ${proposal.account.name}
+          
+          Status: ${
+            isSuccess
+              ? 'Success'
+              : !quorumReached
+              ? 'Defeated - Quorum Not Reached'
+              : 'Defeated'
+          }
+          
+          🗳️ Voting Breakdown:
+          - Yes Votes: ${formatNumber(yesVotes, undefined, {
+            minimumFractionDigits: 0,
+          })}
+          - No Votes: ${formatNumber(noVotes, undefined, {
+            minimumFractionDigits: 0,
+          })}
+          
+          🔗 https://realms.today/dao/${escape(
+            REALM
+          )}/proposal/${proposal.pubkey.toBase58()}`
+
+          console.log(msg)
+          if (process.env.WEBHOOK_URL) {
+            axios.post(process.env.WEBHOOK_URL, { content: msg })
+          }
+        }
         countClosed++
         continue
       }
@@ -106,7 +158,7 @@ async function runNotifier() {
         const msg = `“${
           proposal.account.name
         }” proposal just opened for voting 🗳 https://realms.today/dao/${escape(
-          REALM_SYMBOL
+          REALM
         )}/proposal/${proposal.pubkey.toBase58()}`
 
         console.log(msg)
@@ -122,7 +174,7 @@ async function runNotifier() {
         // const msg = `“${
         //     proposal.account.name
         // }” proposal just opened for voting 🗳 https://realms.today/dao/${escape(
-        //     REALM_SYMBOL
+        //     REALM
         // )}/proposal/${proposal.pubkey.toBase58()}`
         //
         // console.log(msg)
@@ -133,7 +185,7 @@ async function runNotifier() {
 
       const remainingInSeconds =
         governancesMap[proposal.account.governance.toBase58()].account.config
-          .maxVotingTime +
+          .baseVotingTime +
         proposal.account.votingAt.toNumber() -
         nowInSeconds
       if (
@@ -143,7 +195,7 @@ async function runNotifier() {
         const msg = `“${
           proposal.account.name
         }” proposal will close for voting 🗳 https://realms.today/dao/${escape(
-          REALM_SYMBOL
+          REALM
         )}/proposal/${proposal.pubkey.toBase58()} in 24 hrs`
 
         console.log(msg)

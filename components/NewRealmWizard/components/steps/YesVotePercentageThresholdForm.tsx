@@ -31,15 +31,16 @@ export const CouncilYesVotePercentageSchema = {
     .number()
     .transform((value) => (isNaN(value) ? 0 : value))
     .max(100, 'Approval cannot require more than 100% of votes')
-    .when('$memberAddresses', (memberAddresses, schema) => {
-      if (memberAddresses) {
-        return schema
-          .min(1, 'Quorum must be at least 1% of member')
-          .required('Required')
-      } else {
-        return schema.min(1, 'Quorum must be at least 1% of member')
+    .min(1, 'Quorum must be at least 1% of member')
+    .when(
+      ['$_programVersion', '$addCouncil'],
+      // @ts-expect-error yup types are wrong https://github.com/jquense/yup/issues/649
+      (_programVersion, addCouncil, schema) => {
+        if (_programVersion >= 3 && addCouncil) {
+          return schema.required('Council yes threshold is required')
+        }
       }
-    }),
+    ),
 }
 
 export interface CouncilYesVotePercentage {
@@ -55,6 +56,7 @@ export default function YesVotePercentageForm({
   forCommunity = false,
   onSubmit,
   onPrevClick,
+  title,
 }) {
   const schema = yup
     .object(
@@ -79,7 +81,8 @@ export default function YesVotePercentageForm({
     : forCouncil
     ? 'councilYesVotePercentage'
     : 'yesVotePercentage'
-  const yesVotePercentage = watch(fieldName) || 0
+  const percentageValue = !formData.isQuadratic || !forCommunity ? 60 : 5
+  const yesVotePercentage = watch(fieldName) || percentageValue
 
   useEffect(() => {
     updateUserInput(
@@ -89,11 +92,15 @@ export default function YesVotePercentageForm({
         : CouncilYesVotePercentageSchema,
       setValue
     )
-  }, [])
+  }, [forCommunity, formData, setValue])
 
   function serializeValues(values) {
     onSubmit({ step: currentStep, data: values })
   }
+
+  useEffect(() => {
+    setValue(fieldName, percentageValue)
+  }, [fieldName, formData.isQuadratic, percentageValue, setValue])
 
   return (
     <form
@@ -104,15 +111,13 @@ export default function YesVotePercentageForm({
         type={type}
         currentStep={currentStep}
         totalSteps={totalSteps}
-        title={`Next, set your ${
-          forCommunity ? "DAO's" : "wallet's"
-        } approval threshold.`}
+        title={title}
       />
       <div className="mt-16 space-y-10 md:space-y-12">
         <Controller
           name={fieldName}
           control={control}
-          defaultValue={60}
+          defaultValue={percentageValue}
           render={({ field, fieldState: { error } }) => (
             <FormField
               title={
@@ -122,11 +127,7 @@ export default function YesVotePercentageForm({
               }
               description=""
             >
-              <InputRangeSlider
-                field={field}
-                error={error?.message}
-                placeholder="60"
-              />
+              <InputRangeSlider field={field} error={error?.message} />
             </FormField>
           )}
         />
@@ -143,8 +144,9 @@ export default function YesVotePercentageForm({
       >
         {forCommunity ? (
           <Text level="1">
-            Typically, newer DAOs start their community approval quorums around
-            60% of total token supply.
+            {!formData.isQuadratic
+              ? 'Typically, newer DAOs start their community approval quorums around 60% of total token supply.'
+              : "Setting a high percentage approval quorum may result in proposals never passing in a quadratic voting DAO, as the voting power is influenced by token distribution. It's recomended to start with a low percentage and adjust as needed."}
           </Text>
         ) : forCouncil && formData?.memberAddresses?.length >= 0 ? (
           <>

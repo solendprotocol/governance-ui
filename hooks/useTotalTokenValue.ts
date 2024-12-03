@@ -1,6 +1,7 @@
-import tokenService from '@utils/services/token'
+import { PublicKey } from '@solana/web3.js'
 import BigNumber from 'bignumber.js'
-import { useEffect, useState } from 'react'
+import { fetchJupiterPrice } from './queries/jupiterPrice'
+import { useAsync } from 'react-async-hook'
 
 const useTotalTokenValue = ({
   amount,
@@ -9,17 +10,19 @@ const useTotalTokenValue = ({
   amount: number
   mintAddress: string
 }) => {
-  const [totalValue, setTotalValue] = useState('')
+  const { result: tokenPrice } = useAsync(
+    async () =>
+      await fetchJupiterPrice(new PublicKey(mintAddress)).then((x) =>
+        x.found ? x.result.price : 0
+      ),
+    [mintAddress]
+  )
 
-  useEffect(() => {
-    const price = tokenService.getUSDTokenPrice(mintAddress)
-    const totalPrice = amount * price
-    const totalPriceFormatted = amount
-      ? new BigNumber(totalPrice).toFormat(0)
-      : ''
-    setTotalValue(totalPriceFormatted)
-  }, [amount, mintAddress])
+  const totalPrice = amount * (tokenPrice ?? 0)
+  const totalPriceFormatted = amount
+    ? new BigNumber(totalPrice).toFormat(0)
+    : ''
 
-  return totalValue
+  return totalPriceFormatted
 }
 export default useTotalTokenValue

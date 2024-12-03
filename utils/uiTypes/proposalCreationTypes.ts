@@ -1,14 +1,34 @@
-import { Governance, InstructionData } from '@solana/spl-governance'
+import { Governance } from '@solana/spl-governance'
 import { ProgramAccount } from '@solana/spl-governance'
-import { RpcContext } from '@solana/spl-governance'
 import { MintInfo } from '@solana/spl-token'
 import { PublicKey, Keypair, TransactionInstruction } from '@solana/web3.js'
 import { getNameOf } from '@tools/core/script'
 import { SupportedMintName } from '@tools/sdk/solend/configuration'
 import { DepositWithMintAccount, Voter } from 'VoteStakeRegistry/sdk/accounts'
 import { LockupKind } from 'VoteStakeRegistry/tools/types'
-import { consts as foresightConsts } from '@foresight-tmp/foresight-sdk'
 import { AssetAccount, StakeAccount } from '@utils/uiTypes/assets'
+import { RealmInfo } from '@models/registry/api'
+import * as PaymentStreaming from '@mean-dao/payment-streaming'
+
+// Alphabetical order
+export enum PackageEnum {
+  Common,
+  Distribution,
+  Dual,
+  GatewayPlugin,
+  Identity,
+  MangoMarketV4,
+  MeanFinance,
+  NftPlugin,
+  PsyFinance,
+  Pyth,
+  Serum,
+  Solend,
+  Symmetry,
+  Squads,
+  Switchboard,
+  VsrPlugin,
+}
 
 export interface UiInstruction {
   serializedInstruction: string
@@ -17,11 +37,9 @@ export interface UiInstruction {
   governance: ProgramAccount<Governance> | undefined
   customHoldUpTime?: number
   prerequisiteInstructions?: TransactionInstruction[]
-  chunkSplitByDefault?: boolean
-  prerequisiteInstructionsSigners?: Keypair[]
+  prerequisiteInstructionsSigners?: (Keypair | null)[]
   chunkBy?: number
   signers?: Keypair[]
-  shouldSplitIntoSeparateTxs?: boolean | undefined
 }
 
 export interface SplTokenTransferForm {
@@ -32,72 +50,57 @@ export interface SplTokenTransferForm {
   mintInfo: MintInfo | undefined
 }
 
+export interface BurnTokensForm {
+  amount: number | undefined
+  governedTokenAccount: AssetAccount | undefined
+  mintInfo: MintInfo | undefined
+}
+
 export interface DomainNameTransferForm {
   destinationAccount: string
   governedAccount: AssetAccount | undefined
   domainAddress: string | undefined
 }
 
-export interface CastleDepositForm {
-  amount: number | undefined
+export interface MeanCreateAccount {
   governedTokenAccount: AssetAccount | undefined
-  castleVaultId: string
-  programId: string | undefined
+  label: string | undefined
   mintInfo: MintInfo | undefined
-}
-
-export interface CastleWithdrawForm {
   amount: number | undefined
-  governedTokenAccount: AssetAccount | undefined
-  castleVaultId: string
-  programId: string | undefined
-  mintInfo: MintInfo | undefined
+  type: PaymentStreaming.AccountType
 }
 
-export interface FriktionDepositForm {
+export interface MeanFundAccount {
+  governedTokenAccount: AssetAccount | undefined
+  mintInfo: MintInfo | undefined
   amount: number | undefined
-  governedTokenAccount: AssetAccount | undefined
-  voltVaultId: string
-  programId: string | undefined
-  mintInfo: MintInfo | undefined
+  paymentStreamingAccount: PaymentStreaming.PaymentStreamingAccount | undefined
 }
 
-export interface FriktionWithdrawForm {
+export interface MeanWithdrawFromAccount {
+  governedTokenAccount: AssetAccount | undefined
+  mintInfo: MintInfo | undefined
   amount: number | undefined
+  paymentStreamingAccount: PaymentStreaming.PaymentStreamingAccount | undefined
+  destination: string | undefined
+}
+
+export interface MeanCreateStream {
   governedTokenAccount: AssetAccount | undefined
-  voltVaultId: string
-  programId: string | undefined
+  paymentStreamingAccount: PaymentStreaming.PaymentStreamingAccount | undefined
+  streamName: string | undefined
+  destination: string | undefined
   mintInfo: MintInfo | undefined
+  allocationAssigned: number | undefined
+  rateAmount: number | undefined
+  rateInterval: 0 | 1 | 2 | 3 | 4 | 5
+  startDate: string
 }
 
-export interface FriktionClaimPendingDepositForm {
+export interface MeanTransferStream {
   governedTokenAccount: AssetAccount | undefined
-  voltVaultId: string
-  programId: string | undefined
-  mintInfo: MintInfo | undefined
-}
-
-export interface FriktionClaimPendingWithdrawForm {
-  governedTokenAccount: AssetAccount | undefined
-  voltVaultId: string
-  programId: string | undefined
-  mintInfo: MintInfo | undefined
-}
-
-export interface GoblinGoldDepositForm {
-  amount: number | undefined
-  governedTokenAccount?: AssetAccount | undefined
-  goblinGoldVaultId: string
-  mintName?: SupportedMintName | undefined
-  mintInfo: MintInfo | undefined
-}
-
-export interface GoblinGoldWithdrawForm {
-  amount: number | undefined
-  governedTokenAccount?: AssetAccount | undefined
-  goblinGoldVaultId?: string
-  mintName?: SupportedMintName
-  mintInfo: MintInfo | undefined
+  stream: PaymentStreaming.Stream | undefined
+  destination: string | undefined
 }
 
 export interface GrantForm {
@@ -115,9 +118,13 @@ export interface ClawbackForm {
   governedTokenAccount: AssetAccount | undefined
   voter: Voter | null
   deposit: DepositWithMintAccount | null
+  holdupTime: number
 }
 
-export interface SendTokenCompactViewForm extends SplTokenTransferForm {
+export interface SendTokenCompactViewForm extends Omit<SplTokenTransferForm, 'amount' | 'destinationAccount'> {
+  destinationAccount: string[]
+  amount: (number | undefined)[]
+  txDollarAmount: (string | undefined)[]
   description: string
   title: string
 }
@@ -144,16 +151,6 @@ export interface ProgramUpgradeForm {
   bufferSpillAddress?: string | undefined
 }
 
-export interface CreateStreamForm {
-  recipient: string
-  tokenAccount?: AssetAccount
-  start: string
-  depositedAmount: number
-  releaseAmount: number
-  amountAtCliff: number
-  cancelable: boolean
-}
-
 export const programUpgradeFormNameOf = getNameOf<ProgramUpgradeForm>()
 
 export interface MangoMakeAddOracleForm {
@@ -168,186 +165,39 @@ export type NameValue = {
   value: string
 }
 
-export interface MangoMakeSetMarketModeForm {
-  governedAccount: AssetAccount | null
-  mangoGroup: NameValue | null
-  marketIndex: NameValue | null
-  marketMode: NameValue | null
-  marketType: NameValue | null
-  adminPk: string
+/* PsyOptions American options */
+export interface PsyFinanceMintAmericanOptionsForm {
+  contractSize: number
+  expirationUnixTimestamp: number
+  optionTokenDestinationAccount: string
+  quoteMint: string
+  size: number | undefined
+  strike: number
+  underlyingAccount: AssetAccount | undefined
+  underlyingMint: PublicKey | undefined
+  writerTokenDestinationAccount: string
 }
 
-export interface MangoSwapSpotMarketForm {
-  governedAccount: AssetAccount | null
-  mangoGroup: NameValue | null
-  market: NameValue | null
-  adminPk: string
-  newSpotMarketPk: string
+export interface PsyFinanceBurnWriterForQuote {
+  size: number
+  writerTokenAccount: AssetAccount | undefined
+  quoteDestination: string
 }
 
-export interface MangoRemoveOracleForm {
-  governedAccount: AssetAccount | null
-  mangoGroup: NameValue | null
-  adminPk: string
-  oraclePk: NameValue | null
+export interface PsyFinanceClaimUnderlyingPostExpiration {
+  size: number
+  writerTokenAccount: AssetAccount | undefined
+  underlyingDestination: string
 }
 
-export interface SagaPhoneForm {
-  governedAccount: AssetAccount | null
-  quantity: number
+export interface PsyFinanceExerciseOption {
+  size: number
+  optionTokenAccount: AssetAccount | undefined
+  quoteAssetAccount: AssetAccount | undefined
 }
 
-export interface MangoRemovePerpMarketForm {
-  governedAccount: AssetAccount | null
-  mangoGroup: NameValue | null
-  marketPk: NameValue | null
-  adminPk: string
-  mngoDaoVaultPk: string
-}
+/* End PsyOptions American options */
 
-export interface MangoDepositToMangoAccountForm {
-  governedAccount: AssetAccount | null
-  amount: number
-  mangoAccountPk: string
-}
-
-export interface MangoDepositToMangoAccountFormCsv {
-  governedAccount: AssetAccount | null
-  data: any[]
-}
-
-export interface MangoRemoveSpotMarketForm {
-  governedAccount: AssetAccount | null
-  mangoGroup: NameValue | null
-  marketIndex: NameValue | null
-  adminPk: string
-  adminVaultPk: string
-}
-
-export interface MangoMakeAddSpotMarketForm {
-  governedAccount: AssetAccount | undefined
-  programId: string | undefined
-  mangoGroup: string | undefined
-  oracleAccount: string | undefined
-  serumAccount: string | undefined
-  maintLeverage: number
-  initLeverage: number
-  liquidationFee: number
-  optUtil: number
-  optRate: number
-  maxRate: number
-}
-
-export interface MangoMakeChangeSpotMarketForm {
-  governedAccount: AssetAccount | undefined
-  programId: string | undefined
-  mangoGroup: string | undefined
-  baseSymbol: string | undefined
-  maintLeverage: number | undefined
-  initLeverage: number | undefined
-  liquidationFee: number | undefined
-  optUtil: number
-  optRate: number
-  maxRate: number
-  version: string | undefined
-}
-
-export interface MangoMakeChangePerpMarketForm {
-  governedAccount: AssetAccount | undefined
-  programId: string | undefined
-  mangoGroup: string | undefined
-  perpMarket: string | undefined
-  mngoPerPeriod: string | undefined
-  maxDepthBps: string | undefined
-  lmSizeShift: string | undefined
-  makerFee: string | undefined
-  takerFee: string | undefined
-  maintLeverage: string | undefined
-  initLeverage: string | undefined
-  liquidationFee: string | undefined
-  rate: string | undefined
-  exp: string | undefined
-  targetPeriodLength: string | undefined
-  version: string | undefined
-}
-
-export interface MangoMakeCreatePerpMarketForm {
-  governedAccount: AssetAccount | undefined
-  programId: string | undefined
-  mangoGroup: string | undefined
-  oracleAccount: string | undefined
-  baseDecimals: number
-  baseLotSize: number
-  quoteLotSize: number
-  mngoPerPeriod: number
-  maxDepthBps: number
-  lmSizeShift: number
-  makerFee: number
-  takerFee: number
-  maintLeverage: number
-  initLeverage: number
-  liquidationFee: number
-  rate: number
-  exp: number
-  targetPeriodLength: number
-  version: number
-}
-export interface MangoMakeChangeMaxAccountsForm {
-  governedAccount: AssetAccount | undefined
-  programId: string | undefined
-  mangoGroup: string | undefined
-  maxMangoAccounts: number
-}
-export interface MangoMakeChangeReferralFeeParams {
-  governedAccount: AssetAccount | undefined
-  programId: string | undefined
-  mangoGroup: string | undefined
-  refSurchargeCentibps: number
-  refShareCentibps: number
-  refMngoRequired: number
-}
-
-export interface MangoMakeChangeReferralFeeParams2 {
-  governedAccount: AssetAccount | undefined
-  programId: string | undefined
-  mangoGroup: string | undefined
-  refSurchargeCentibps: number
-  refShareCentibps: number
-  refMngoRequired: number
-  refSurchargeCentibps2: number
-  refShareCentibps2: number
-  refMngoRequired2: number
-}
-
-export interface ForesightHasGovernedAccount {
-  governedAccount: AssetAccount
-}
-
-export interface ForesightHasMarketListId extends ForesightHasGovernedAccount {
-  marketListId: string
-}
-
-export interface ForesightHasMarketId extends ForesightHasMarketListId {
-  marketId: number
-}
-
-export interface ForesightHasCategoryId extends ForesightHasGovernedAccount {
-  categoryId: string
-}
-
-export interface ForesightMakeAddMarketListToCategoryParams
-  extends ForesightHasCategoryId,
-    ForesightHasMarketListId {}
-
-export interface ForesightMakeResolveMarketParams extends ForesightHasMarketId {
-  winner: number
-}
-
-export interface ForesightMakeSetMarketMetadataParams
-  extends ForesightHasMarketId {
-  content: string
-  field: foresightConsts.MarketMetadataFieldName
-}
 export interface Base64InstructionForm {
   governedAccount: AssetAccount | undefined
   base64: string
@@ -356,16 +206,6 @@ export interface Base64InstructionForm {
 
 export interface EmptyInstructionForm {
   governedAccount: AssetAccount | undefined
-}
-
-export interface SwitchboardAdmitOracleForm {
-  oraclePubkey: PublicKey | undefined
-  queuePubkey: PublicKey | undefined
-}
-
-export interface SwitchboardRevokeOracleForm {
-  oraclePubkey: PublicKey | undefined
-  queuePubkey: PublicKey | undefined
 }
 
 export interface CreateAssociatedTokenAccountForm {
@@ -420,96 +260,145 @@ export interface UpdateTokenMetadataForm {
   programId: string | undefined
 }
 
-export enum Instructions {
-  Transfer,
-  ProgramUpgrade,
-  Mint,
-  Base64,
-  None,
-  MangoAddOracle,
-  MangoAddSpotMarket,
-  MangoChangeMaxAccounts,
-  MangoChangePerpMarket,
-  MangoChangeReferralFeeParams,
-  MangoChangeReferralFeeParams2,
-  MangoChangeSpotMarket,
-  MangoCreatePerpMarket,
-  MangoSetMarketMode,
-  MangoChangeQuoteParams,
-  MangoRemoveSpotMarket,
-  MangoRemovePerpMarket,
-  MangoSwapSpotMarket,
-  MangoRemoveOracle,
-  MangoV4TokenRegister,
-  MangoV4TokenEdit,
-  MangoV4PerpEdit,
-  MangoV4Serum3RegisterMarket,
-  MangoV4PerpCreate,
-  MangoV4TokenRegisterTrustless,
-  CreateStream,
-  CancelStream,
-  Grant,
-  Clawback,
-  CreateAssociatedTokenAccount,
-  DepositIntoVolt,
-  WithdrawFromVolt,
-  ClaimPendingDeposit,
-  ClaimPendingWithdraw,
-  DepositIntoCastle,
-  WithrawFromCastle,
-  DepositIntoGoblinGold,
-  WithdrawFromGoblinGold,
-  CreateSolendObligationAccount,
-  InitSolendObligationAccount,
-  DepositReserveLiquidityAndObligationCollateral,
-  WithdrawObligationCollateralAndRedeemReserveLiquidity,
-  SwitchboardAdmitOracle,
-  SwitchboardRevokeOracle,
-  RefreshSolendObligation,
-  RefreshSolendReserve,
-  ForesightInitMarket,
-  ForesightInitMarketList,
-  ForesightInitCategory,
-  ForesightResolveMarket,
-  ForesightAddMarketListToCategory,
-  ForesightSetMarketMetadata,
-  RealmConfig,
-  CreateNftPluginRegistrar,
-  CreateNftPluginMaxVoterWeight,
-  ConfigureNftPluginCollection,
-  CloseTokenAccount,
-  VotingMintConfig,
-  CreateVsrRegistrar,
-  CreateGatewayPluginRegistrar,
-  ConfigureGatewayPlugin,
-  ChangeMakeDonation,
-  CreateTokenMetadata,
-  UpdateTokenMetadata,
-  SagaPreOrder,
-  DepositToMangoAccount,
-  DepositToMangoAccountCsv,
-  StakeValidator,
-  DeactivateValidatorStake,
-  WithdrawValidatorStake,
-  DifferValidatorStake,
-  TransferDomainName,
-  EverlendDeposit,
-  EverlendWithdraw,
+export interface SerumInitUserForm {
+  governedAccount?: AssetAccount
+  owner: string
+  programId: string
 }
 
-export type createParams = [
-  rpc: RpcContext,
-  realm: PublicKey,
-  governance: PublicKey,
-  tokenOwnerRecord: PublicKey,
-  name: string,
-  descriptionLink: string,
-  governingTokenMint: PublicKey,
-  holdUpTime: number,
-  proposalIndex: number,
-  instructionsData: InstructionData[],
-  isDraft: boolean
-]
+export interface SerumGrantLockedForm {
+  governedAccount?: AssetAccount
+  owner: string
+  mintInfo: MintInfo | undefined
+  amount: number | undefined
+  programId: string
+}
+
+export interface SerumUpdateConfigParam {
+  governedAccount?: AssetAccount // Config Authority
+  claimDelay?: number
+  redeemDelay?: number
+  cliffPeriod?: number
+  linearVestingPeriod?: number
+}
+
+export interface SerumUpdateConfigAuthority {
+  governedAccount?: AssetAccount // Config Authority
+  newAuthority?: string
+}
+
+export interface JoinDAOForm {
+  governedAccount?: AssetAccount
+  mintInfo: MintInfo | undefined
+  realm: RealmInfo | null
+  amount?: number
+}
+
+export enum Instructions {
+  Base64,
+  Burn,
+  ChangeMakeDonation,
+  Clawback,
+  CloseTokenAccount,
+  CloseMultipleTokenAccounts,
+  ConfigureGatewayPlugin,
+  ConfigureNftPluginCollection,
+  CreateAssociatedTokenAccount,
+  CreateGatewayPluginRegistrar,
+  CreateNftPluginMaxVoterWeight,
+  CreateNftPluginRegistrar,
+  CreateSolendObligationAccount,
+  CreateTokenMetadata,
+  CreateVsrRegistrar,
+  DeactivateValidatorStake,
+  DepositReserveLiquidityAndObligationCollateral,
+  DifferValidatorStake,
+  DualFinanceAirdrop,
+  DualFinanceExerciseStakingOption,
+  DualFinanceLiquidityStakingOption,
+  DualFinanceInitStrike,
+  DualFinanceStakingOption,
+  DualFinanceGso,
+  DualFinanceGsoWithdraw,
+  DualFinanceStakingOptionWithdraw,
+  DualFinanceDelegate,
+  DualFinanceDelegateWithdraw,
+  DualFinanceVoteDeposit,
+  DaoVote,
+  DistributionCloseVaults,
+  DistributionFillVaults,
+  DelegateStake,
+  RemoveStakeLock,
+  Grant,
+  InitSolendObligationAccount,
+  JoinDAO,
+  MangoV4PerpCreate,
+  MangoV4PerpEdit,
+  MangoV4OpenBookRegisterMarket,
+  MangoV4OpenBookEditMarket,
+  MangoV4TokenEdit,
+  MangoV4TokenRegister,
+  MangoV4TokenRegisterTrustless,
+  MangoV4GroupEdit,
+  IdlSetBuffer,
+  MangoV4IxGateSet,
+  MangoV4AltSet,
+  MangoV4AltExtend,
+  MangoV4StubOracleCreate,
+  MangoV4StubOracleSet,
+  MangoV4TokenAddBank,
+  MangoV4AdminWithdrawTokenFees,
+  MangoV4WithdrawPerpFees,
+  MeanCreateAccount,
+  MeanCreateStream,
+  MeanFundAccount,
+  MeanTransferStream,
+  MeanWithdrawFromAccount,
+  Mint,
+  None,
+  ProgramUpgrade,
+  PsyFinanceBurnWriterForQuote,
+  PsyFinanceClaimUnderlyingPostExpiration,
+  PsyFinanceExerciseOption,
+  PsyFinanceMintAmericanOptions,
+  RealmConfig,
+  RefreshSolendObligation,
+  RefreshSolendReserve,
+  SerumGrantLockedMSRM,
+  SerumGrantLockedSRM,
+  SerumGrantVestMSRM,
+  SerumGrantVestSRM,
+  SerumInitUser,
+  SerumUpdateGovConfigAuthority,
+  SerumUpdateGovConfigParams,
+  SquadsMeshAddMember,
+  SquadsMeshChangeThresholdMember,
+  SquadsMeshRemoveMember,
+  PythRecoverAccount,
+  PythUpdatePoolAuthority,
+  StakeValidator,
+  SwitchboardFundOracle,
+  WithdrawFromOracle,
+  Transfer,
+  TransferDomainName,
+  UpdateTokenMetadata,
+  VotingMintConfig,
+  WithdrawObligationCollateralAndRedeemReserveLiquidity,
+  WithdrawValidatorStake,
+  SplitStake,
+  AddKeyToDID,
+  RemoveKeyFromDID,
+  AddServiceToDID,
+  RemoveServiceFromDID,
+  RevokeGoverningTokens,
+  SetMintAuthority,
+  SanctumDepositStake,
+  SanctumWithdrawStake,
+  SymmetryCreateBasket,
+  SymmetryEditBasket,
+  SymmetryDeposit,
+  SymmetryWithdraw
+}
 
 export interface ComponentInstructionData {
   governedAccount?: ProgramAccount<Governance> | undefined
@@ -518,6 +407,7 @@ export interface ComponentInstructionData {
 }
 export interface InstructionsContext {
   instructionsData: ComponentInstructionData[]
+  voteByCouncil?: boolean | null
   handleSetInstructions: (val, index) => void
   governance: ProgramAccount<Governance> | null | undefined
   setGovernance: (val) => void
@@ -565,4 +455,158 @@ export interface ValidatorWithdrawStakeForm {
   governedTokenAccount: AssetAccount | undefined
   stakingAccount: StakeAccount | undefined
   amount: number
+}
+
+export interface ValidatorRemoveLockup {
+  governedTokenAccount: AssetAccount | undefined
+  stakeAccount: string
+}
+
+export interface DelegateStakeForm {
+  governedTokenAccount: AssetAccount | undefined
+  stakingAccount: StakeAccount | undefined
+  votePubkey: string
+}
+
+export interface DualFinanceAirdropForm {
+  root: string
+  amount: number
+  eligibilityStart: number
+  eligibilityEnd: number
+  amountPerVoter: number
+  treasury: AssetAccount | undefined
+}
+
+export interface DualFinanceStakingOptionForm {
+  strike: number
+  soName: string | undefined
+  optionExpirationUnixSeconds: number
+  numTokens: string
+  lotSize: number
+  baseTreasury: AssetAccount | undefined
+  quoteTreasury: AssetAccount | undefined
+  payer: AssetAccount | undefined
+  userPk: string | undefined
+}
+
+export interface DualFinanceGsoForm {
+  strike: number
+  soName: string | undefined
+  optionExpirationUnixSeconds: number
+  numTokens: number
+  lotSize: number
+  subscriptionPeriodEnd: number
+  lockupRatio: number
+  lockupMint: string
+  baseTreasury: AssetAccount | undefined
+  quoteTreasury: AssetAccount | undefined
+  payer: AssetAccount | undefined
+}
+
+export interface DualFinanceLiquidityStakingOptionForm {
+  optionExpirationUnixSeconds: number
+  numTokens: number
+  lotSize: number
+  baseTreasury: AssetAccount | undefined
+  quoteTreasury: AssetAccount | undefined
+  payer: AssetAccount | undefined
+}
+
+export interface DualFinanceInitStrikeForm {
+  strikes: string
+  soName: string
+  payer: AssetAccount | undefined
+  baseTreasury: AssetAccount | undefined
+}
+
+export interface DualFinanceExerciseForm {
+  numTokens: number
+  soName: string | undefined
+  baseTreasury: AssetAccount | undefined
+  quoteTreasury: AssetAccount | undefined
+  optionAccount: AssetAccount | undefined
+}
+
+export interface DualFinanceWithdrawForm {
+  soName: string | undefined
+  baseTreasury: AssetAccount | undefined
+  mintPk: string | undefined
+}
+
+export interface DualFinanceGsoWithdrawForm {
+  soName: string | undefined
+  baseTreasury: AssetAccount | undefined
+}
+
+export interface DualFinanceDelegateForm {
+  delegateAccount: string | undefined
+  realm: string | undefined
+  delegateToken: AssetAccount | undefined
+}
+
+export interface DualFinanceDelegateWithdrawForm {
+  realm: string | undefined
+  delegateToken: AssetAccount | undefined
+}
+
+export interface DualFinanceVoteDepositForm {
+  numTokens: number
+  realm: string | undefined
+  delegateToken: AssetAccount | undefined
+}
+
+export interface SymmetryCreateBasketForm {
+  governedAccount?: AssetAccount,
+  basketType: number,
+  basketName: string,
+  basketSymbol: string,
+  basketMetadataUrl: string,
+  basketComposition: {
+    name: string,
+    symbol: string,
+    token: PublicKey;
+    weight: number;
+  }[],
+  rebalanceThreshold: number,
+  rebalanceSlippageTolerance: number,
+  depositFee: number,
+  feeCollectorAddress:string,
+  liquidityProvision: boolean,
+  liquidityProvisionRange: number,
+}
+
+
+export interface SymmetryEditBasketForm {
+  governedAccount?: AssetAccount,
+  basketAddress?: PublicKey,
+  basketType: number,
+  basketName: string,
+  basketSymbol: string,
+  basketMetadataUrl: string,
+  basketComposition: {
+    name: string,
+    symbol: string,
+    token: PublicKey;
+    weight: number;
+  }[],
+  rebalanceThreshold: number,
+  rebalanceSlippageTolerance: number,
+  depositFee: number,
+  feeCollectorAddress:string,
+  liquidityProvision: boolean,
+  liquidityProvisionRange: number,
+}
+
+export interface SymmetryDepositForm {
+  governedAccount?: AssetAccount,
+  basketAddress?: PublicKey,
+  depositToken?: PublicKey,
+  depositAmount: number,
+}
+
+export interface SymmetryWithdrawForm {
+  governedAccount?: AssetAccount,
+  basketAddress?: PublicKey,
+  withdrawAmount: number,
+  withdrawType: number
 }

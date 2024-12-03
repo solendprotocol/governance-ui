@@ -1,31 +1,30 @@
-import { ConnectionContext } from '@utils/connection'
 import { notify } from '@utils/notifications'
-import { tvl } from 'Strategies/protocols/mango/tools'
+import { getPsyFiStrategies } from 'Strategies/protocols/psyfi'
 import { getSolendStrategies } from 'Strategies/protocols/solend'
 import { TreasuryStrategy } from 'Strategies/types/types'
 import create, { State } from 'zustand'
-import { getEverlendStrategies } from '../protocols/everlend/tools'
 
 interface StrategiesStore extends State {
   strategies: TreasuryStrategy[]
   strategiesLoading: boolean
-  getStrategies: (connection: ConnectionContext) => void
+  getStrategies: () => void
 }
 
 const useStrategiesStore = create<StrategiesStore>((set, _get) => ({
   strategies: [],
   strategiesLoading: false,
-  getStrategies: async (connection: ConnectionContext) => {
+  getStrategies: async () => {
     set((s) => {
       s.strategiesLoading = true
     })
     try {
-      const mango = await tvl(Date.now() / 1000, connection)
-      const solend = await getSolendStrategies()
-      const everlend = await getEverlendStrategies(connection)
+      const [solend, psyfi] = await Promise.all([
+        getSolendStrategies(),
+        getPsyFiStrategies(),
+      ])
 
       //add fetch functions for your protocol in promise.all
-      const strategies: TreasuryStrategy[] = [...solend, ...mango, ...everlend]
+      const strategies: TreasuryStrategy[] = [...solend, ...psyfi]
 
       set((s) => {
         s.strategies = strategies

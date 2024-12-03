@@ -1,9 +1,10 @@
-import React, { useContext, useEffect, useState } from 'react'
+import { useContext, useEffect, useState } from 'react'
 import * as yup from 'yup'
 import {
   getInstructionDataFromBase64,
   Governance,
   ProgramAccount,
+  serializeInstructionToBase64,
 } from '@solana/spl-governance'
 import Input from '@components/inputs/Input'
 import Textarea from '@components/inputs/Textarea'
@@ -13,12 +14,15 @@ import {
   UiInstruction,
 } from '@utils/uiTypes/proposalCreationTypes'
 
-import useWalletStore from 'stores/useWalletStore'
-
 import { NewProposalContext } from '../../new'
 import GovernedAccountSelect from '../GovernedAccountSelect'
-import useRealm from '@hooks/useRealm'
 import useGovernanceAssets from '@hooks/useGovernanceAssets'
+import useWalletOnePointOh from '@hooks/useWalletOnePointOh'
+import { useLegacyVoterWeight } from '@hooks/queries/governancePower'
+import ForwarderProgram, {
+  useForwarderProgramHelpers,
+} from '@components/ForwarderProgram/ForwarderProgram'
+import { TransactionInstruction } from '@solana/web3.js'
 
 const CustomBase64 = ({
   index,
@@ -27,10 +31,11 @@ const CustomBase64 = ({
   index: number
   governance: ProgramAccount<Governance> | null
 }) => {
-  const { ownVoterWeight } = useRealm()
-  const wallet = useWalletStore((s) => s.current)
+  const { result: ownVoterWeight } = useLegacyVoterWeight()
+  const wallet = useWalletOnePointOh()
   const { assetAccounts } = useGovernanceAssets()
-  const shouldBeGoverned = index !== 0 && governance
+  const forwarderProgramHelpers = useForwarderProgramHelpers()
+  const shouldBeGoverned = !!(index !== 0 && governance)
   const [form, setForm] = useState<Base64InstructionForm>({
     governedAccount: undefined,
     base64: '',
@@ -50,7 +55,19 @@ const CustomBase64 = ({
       form.governedAccount?.governance?.account &&
       wallet?.publicKey
     ) {
-      serializedInstruction = form.base64
+      if (forwarderProgramHelpers.form.useExecutableBy) {
+        const ix = getInstructionDataFromBase64(form.base64)
+        const tx = new TransactionInstruction({
+          keys: ix.accounts,
+          data: Buffer.from(ix.data),
+          programId: ix.programId,
+        })
+        serializedInstruction = serializeInstructionToBase64(
+          forwarderProgramHelpers.withForwarderWrapper(tx)
+        )
+      } else {
+        serializedInstruction = form.base64
+      }
     }
     const obj: UiInstruction = {
       serializedInstruction: serializedInstruction,
@@ -65,7 +82,12 @@ const CustomBase64 = ({
       { governedAccount: form.governedAccount?.governance, getInstruction },
       index
     )
-  }, [form])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- TODO please fix, it can cause difficult bugs. You might wanna check out https://bobbyhadz.com/blog/react-hooks-exhaustive-deps for info. -@asktree
+  }, [
+    form,
+    forwarderProgramHelpers.form,
+    forwarderProgramHelpers.withForwarderWrapper,
+  ])
   const schema = yup.object().shape({
     governedAccount: yup
       .object()
@@ -111,7 +133,7 @@ const CustomBase64 = ({
       <GovernedAccountSelect
         label="Governance"
         governedAccounts={assetAccounts.filter((x) =>
-          ownVoterWeight.canCreateProposal(x.governance.account.config)
+          ownVoterWeight?.canCreateProposal(x.governance.account.config)
         )}
         onChange={(value) => {
           handleSetForm({ value, propertyName: 'governedAccount' })
@@ -149,6 +171,7 @@ const CustomBase64 = ({
         }
         error={formErrors['base64']}
       ></Textarea>
+      <ForwarderProgram {...forwarderProgramHelpers}></ForwarderProgram>
     </>
   )
 }
